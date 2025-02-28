@@ -1,0 +1,44 @@
+name: stock_app
+description: "A new Flutter project."
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.6.1
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  supabase_flutter: ^2.8.3
+  flutter_dotenv: ^5.2.1
+  flutter_riverpod: ^2.6.1
+  riverpod_annotation: ^2.6.1
+  gap: ^3.0.1
+  google_fonts: ^6.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  riverpod_generator: ^2.6.4
+  build_runner: ^2.4.15
+  custom_lint: ^0.7.3
+  riverpod_lint: ^2.6.4
+
+flutter:
+  uses-material-design: true
+  assets:
+    - .env
+    - assets/images/background.png
+    - assets/icons/auth.png
+  # fonts:
+  #   - family: Schyler
+  #     fonts:
+  #       - asset: fonts/Schyler-Regular.ttf
+  #       - asset: fonts/Schyler-Italic.ttf
+  #         style: italic
+  #   - family: Trajan Pro
+  #     fonts:
+  #       - asset: fonts/TrajanPro.ttf
+  #       - asset: fonts/TrajanPro_Bold.ttf
+  #         weight: 700
