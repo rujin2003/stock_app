@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/watchlist_provider.dart';
 import '../providers/stock_quote_provider.dart';
+import '../providers/selected_stock_provider.dart';
 
 class WatchlistView extends ConsumerWidget {
   const WatchlistView({super.key});
@@ -91,6 +92,8 @@ class StockListTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final stockQuoteAsync = ref.watch(stockQuoteProvider((symbol, marketType)));
+    final selectedStock = ref.watch(selectedStockProvider);
+    final isSelected = selectedStock == symbol;
 
     return stockQuoteAsync.when(
       data: (quote) {
@@ -103,6 +106,8 @@ class StockListTile extends ConsumerWidget {
 
         return ListTile(
           dense: true,
+          selected: isSelected,
+          selectedTileColor: Colors.blue.withOpacity(0.1),
           title: Row(
             children: [
               Expanded(
@@ -167,7 +172,7 @@ class StockListTile extends ConsumerWidget {
             ],
           ),
           onTap: () {
-            // Handle tap if needed (e.g., show stock details)
+            ref.read(selectedStockProvider.notifier).selectStock(symbol);
           },
         );
       },

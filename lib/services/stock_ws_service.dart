@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
-import 'dart:io';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 class StockQuote {
@@ -65,7 +65,7 @@ class StockWSService {
     'crypto': 'wss://api.itick.org/cws',
   };
 
-  String get _apiKey => Platform.environment['ITICK_API_KEY']!;
+  String get _apiKey => dotenv.env['ITICK_API_KEY']!;
 
   Future<void> initialize() async {
     if (_apiKey.isEmpty) {
@@ -129,7 +129,7 @@ class StockWSService {
       // Handle market data
       if (jsonData['code'] == 1 && jsonData['data'] != null) {
         final tickData = jsonData['data'];
-        if (tickData['type'] == 'tick') {
+        if (tickData['type'] == 'quote') {
           final quote = StockQuote.fromJson(tickData);
           final controller = _quoteStreamControllers[quote.symbol];
           if (controller != null && !controller.isClosed) {
@@ -152,7 +152,7 @@ class StockWSService {
 
     for (final symbol in _quoteStreamControllers.keys) {
       _channel?.sink.add(
-          jsonEncode({'ac': 'subscribe', 'params': symbol, 'types': 'tick'}));
+          jsonEncode({'ac': 'subscribe', 'params': symbol, 'types': 'quote'}));
       log('Re-subscribed to quotes for $symbol after authentication');
     }
   }

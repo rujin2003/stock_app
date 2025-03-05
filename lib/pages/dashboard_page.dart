@@ -2,12 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stock_app/components/search_view.dart';
 import 'package:stock_app/components/watchlist_view.dart';
+import 'package:stock_app/components/kline_chart.dart';
+import 'package:stock_app/providers/stock_kline_provider.dart';
+import 'package:stock_app/providers/selected_stock_provider.dart';
 
 class DashboardPage extends ConsumerWidget {
   const DashboardPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final selectedStockSymbol = ref.watch(selectedStockProvider);
+
     return Scaffold(
       body: Container(
         width: double.infinity,
@@ -47,7 +52,20 @@ class DashboardPage extends ConsumerWidget {
                     ),
                     const SizedBox(width: 16),
                     Expanded(
-                      child: const Placeholder(),
+                      child: selectedStockSymbol != null
+                          ? ref
+                              .watch(stockKlineProvider(selectedStockSymbol))
+                              .when(
+                                data: (klineData) =>
+                                    KlineChart(klineData: klineData),
+                                loading: () => const Center(
+                                    child: CircularProgressIndicator()),
+                                error: (error, stackTrace) =>
+                                    Center(child: Text('Error: $error')),
+                              )
+                          : const Center(
+                              child: Text('Select a stock to view chart'),
+                            ),
                     ),
                   ],
                 ),
