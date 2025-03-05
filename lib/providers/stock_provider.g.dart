@@ -1,26 +1,27 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'auth_state_provider.dart';
+part of 'stock_provider.dart';
 
 // **************************************************************************
 // RiverpodGenerator
 // **************************************************************************
 
-String _$authStateNotifierHash() => r'e8c20ef0ee4d3c9fa07bf751391230ba1eb3ac28';
+String _$stockItemsNotifierHash() =>
+    r'01e5de9c93136cae032393633d74f475ccff01df';
 
-/// See also [AuthStateNotifier].
-@ProviderFor(AuthStateNotifier)
-final authStateNotifierProvider =
-    AutoDisposeNotifierProvider<AuthStateNotifier, AuthState>.internal(
-  AuthStateNotifier.new,
-  name: r'authStateNotifierProvider',
+/// See also [StockItemsNotifier].
+@ProviderFor(StockItemsNotifier)
+final stockItemsNotifierProvider = AutoDisposeAsyncNotifierProvider<
+    StockItemsNotifier, List<StockItem>>.internal(
+  StockItemsNotifier.new,
+  name: r'stockItemsNotifierProvider',
   debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
       ? null
-      : _$authStateNotifierHash,
+      : _$stockItemsNotifierHash,
   dependencies: null,
   allTransitiveDependencies: null,
 );
 
-typedef _$AuthStateNotifier = AutoDisposeNotifier<AuthState>;
+typedef _$StockItemsNotifier = AutoDisposeAsyncNotifier<List<StockItem>>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

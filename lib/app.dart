@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stock_app/models/auth_state.dart';
+import 'package:stock_app/pages/auth_page.dart';
 import 'package:stock_app/pages/dashboard_page.dart';
-import 'package:stock_app/pages/home_page.dart';
 import 'package:stock_app/providers/auth_state_provider.dart';
 import 'package:stock_app/theme/app_theme_data.dart';
 
@@ -28,7 +28,7 @@ class App extends ConsumerWidget {
       case AuthStatus.error:
       case AuthStatus.initial:
       case AuthStatus.authenticating:
-        return const HomePage();
+        return const AuthPage();
     }
   }
 }

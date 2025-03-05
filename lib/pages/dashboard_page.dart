@@ -1,44 +1,147 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:stock_app/providers/auth_provider.dart';
-import 'package:stock_app/providers/auth_state_provider.dart';
+import 'package:stock_app/components/search_view.dart';
+import 'package:stock_app/components/watchlist_view.dart';
 
 class DashboardPage extends ConsumerWidget {
   const DashboardPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(authProvider);
-    
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Stock Dashboard'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () {
-              ref.read(authStateNotifierProvider.notifier).signOut();
-            },
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: const BoxDecoration(
+          image: DecorationImage(
+            image: AssetImage("assets/images/background.png"),
+            fit: BoxFit.cover,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            children: [
+              TopBar(),
+              const SizedBox(height: 16),
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: MediaQuery.of(context).size.width * 0.3,
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "WATCHLIST",
+                            style: Theme.of(context).textTheme.bodyLarge,
+                          ),
+                          const SizedBox(height: 8),
+                          Expanded(
+                            child: WatchlistView(),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: const Placeholder(),
+                    ),
+                  ],
+                ),
+              )
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class TopBar extends StatelessWidget {
+  const TopBar({
+    super.key,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: MediaQuery.of(context).size.width * 0.5,
+      height: 54,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(92),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withAlpha(25),
+            spreadRadius: 1,
+            blurRadius: 10,
+            offset: const Offset(0, 1),
           ),
         ],
       ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8),
+        child: Row(
+          spacing: 12,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              'Welcome to your Stock Dashboard!',
-              style: Theme.of(context).textTheme.headlineMedium,
+            Image.asset("assets/images/top_logo.png"),
+            VerticalDivider(),
+            GestureDetector(
+              onTap: () {
+                showDialog(
+                  context: context,
+                  builder: (context) {
+                    return Dialog(
+                      backgroundColor: Colors.transparent,
+                      insetPadding: const EdgeInsets.symmetric(
+                        horizontal: 40,
+                        vertical: 40,
+                      ),
+                      child: SearchView(),
+                    );
+                  },
+                );
+              },
+              child: Row(
+                spacing: 8,
+                children: [
+                  const Icon(Icons.search),
+                  Text("Search"),
+                ],
+              ),
             ),
-            const SizedBox(height: 16),
-            Text(
-              'Logged in as: ${user?.email}',
-              style: Theme.of(context).textTheme.bodyLarge,
+            VerticalDivider(),
+            Row(
+              spacing: 8,
+              children: [
+                const Icon(Icons.stacked_line_chart),
+                Text("Indicators"),
+              ],
             ),
-            const SizedBox(height: 32),
-            Text(
-              'Your dashboard content will appear here.',
-              style: Theme.of(context).textTheme.bodyMedium,
+            VerticalDivider(),
+            Row(
+              spacing: 8,
+              children: [
+                const Icon(Icons.notification_add),
+                Text("Alert"),
+              ],
+            ),
+            Spacer(),
+            IconButton(
+              onPressed: () {},
+              icon: Icon(
+                Icons.notifications,
+              ),
+            ),
+            IconButton(
+              onPressed: () {},
+              icon: Icon(
+                Icons.person,
+              ),
             ),
           ],
         ),

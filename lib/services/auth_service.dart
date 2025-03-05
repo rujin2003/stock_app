@@ -29,6 +29,6 @@ class AuthService {
     return _client.auth.currentUser;
   }
 
-  Stream<bool> get authStateChanges => 
-    _client.auth.onAuthStateChange.map((event) => event.session != null);
+  Stream<bool> get authStateChanges =>
+      _client.auth.onAuthStateChange.map((event) => event.session != null);
 }

@@ -3,9 +3,7 @@ import 'package:stock_app/pages/sign_in_page.dart';
 import 'package:stock_app/pages/sign_up_page.dart';
 
 class AuthPage extends StatefulWidget {
-  const AuthPage({super.key, required this.constraints});
-
-  final BoxConstraints constraints;
+  const AuthPage({super.key});
 
   @override
   AuthPageState createState() => AuthPageState();
@@ -22,13 +20,42 @@ class AuthPageState extends State<AuthPage> {
 
   @override
   Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          image: DecorationImage(
+            image: AssetImage("assets/images/background.png"),
+            fit: BoxFit.cover,
+          ),
+        ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final authContent = _buildAuthContent(constraints);
+
+            if (constraints.maxWidth > 900) {
+              return Center(
+                child: SizedBox(
+                  height: constraints.maxHeight * 0.7,
+                  width: constraints.maxWidth * 0.4,
+                  child: authContent,
+                ),
+              );
+            }
+            return authContent;
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAuthContent(BoxConstraints constraints) {
     return Column(
       children: [
         Expanded(
           child: Container(
-              decoration: widget.constraints.maxWidth > 900
+              decoration: constraints.maxWidth > 900
                   ? BoxDecoration(
-                      borderRadius: BorderRadius.all(
+                      borderRadius: const BorderRadius.all(
                         Radius.circular(20),
                       ),
                       color: Colors.transparent,
@@ -38,7 +65,7 @@ class AuthPageState extends State<AuthPage> {
                       ),
                     )
                   : null,
-              child: showSignIn ? SignInPage() : SignUpPage()),
+              child: showSignIn ? const SignInPage() : const SignUpPage()),
         ),
         Padding(
           padding: const EdgeInsets.all(20.0),
