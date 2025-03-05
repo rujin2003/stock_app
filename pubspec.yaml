@@ -11,7 +11,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   supabase_flutter: ^2.8.4
   syncfusion_flutter_charts: ^28.2.9
-  flutter_dotenv: ^5.2.1
+  # flutter_dotenv: ^5.2.1
   flutter_riverpod: ^2.6.1
   riverpod_annotation: ^2.6.1
   gap: ^3.0.1
@@ -31,7 +31,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - .env
+    # - config.env
     - assets/images/background.png
     - assets/icons/auth.png
     - assets/images/top_logo.png

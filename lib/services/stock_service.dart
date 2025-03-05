@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../models/stock_item.dart';
 
@@ -9,7 +9,7 @@ class StockService {
 
   // API key would normally be stored securely, this is a placeholder
   // You should replace this with your actual API key
-  final String apiKey = dotenv.env['ITICK_API_KEY']!;
+  final String apiKey = Platform.environment['ITICK_API_KEY']!;
 
   // Get stock listings based on type and region
   Future<List<StockItem>> getStockListing({

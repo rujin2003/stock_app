@@ -12,7 +12,7 @@ final stockWSServiceProvider = Provider<StockWSService>((ref) {
 
 // Stream provider for individual stock quotes
 final stockQuoteProvider =
-    StreamProvider.family<StockQuote, String>((ref, symbol) {
+    StreamProvider.family<StockQuote, (String, String)>((ref, stock) {
   final stockWSService = ref.watch(stockWSServiceProvider);
-  return stockWSService.subscribeToQuote(symbol);
+  return stockWSService.subscribeToQuote(stock.$1, stock.$2);
 });

@@ -48,7 +48,7 @@ class WatchlistView extends ConsumerWidget {
               initiallyExpanded: true,
               children: symbols
                   .map(
-                    (symbol) => StockListTile(symbol: symbol),
+                    (symbol) => StockListTile(symbol: symbol, marketType: type),
                   )
                   .toList(),
             );
@@ -80,20 +80,23 @@ class WatchlistView extends ConsumerWidget {
 
 class StockListTile extends ConsumerWidget {
   final String symbol;
+  final String marketType;
 
   const StockListTile({
     super.key,
     required this.symbol,
+    required this.marketType,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final stockQuoteAsync = ref.watch(stockQuoteProvider(symbol));
+    final stockQuoteAsync = ref.watch(stockQuoteProvider((symbol, marketType)));
 
     return stockQuoteAsync.when(
       data: (quote) {
         final isPositive = quote.change >= 0;
-        final changeColor = isPositive ? Colors.green : Colors.red;
+        final changeColor =
+            isPositive ? const Color.fromARGB(255, 116, 118, 116) : Colors.red;
         final changeIcon = isPositive
             ? const Icon(Icons.arrow_upward, size: 12)
             : const Icon(Icons.arrow_downward, size: 12);
@@ -203,7 +206,8 @@ class StockListTile extends ConsumerWidget {
         ),
         trailing: IconButton(
           icon: const Icon(Icons.refresh, size: 16),
-          onPressed: () => ref.refresh(stockQuoteProvider(symbol)),
+          onPressed: () =>
+              ref.refresh(stockQuoteProvider((symbol, marketType))),
         ),
       ),
     );

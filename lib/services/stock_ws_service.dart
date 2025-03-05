@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'dart:io';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 class StockQuote {
@@ -58,8 +58,14 @@ class StockWSService {
   bool _isConnected = false;
   bool _isAuthenticated = false;
 
-  final String _wsUrl = 'wss://api.itick.org/sws';
-  String get _apiKey => dotenv.env['ITICK_API_KEY'] ?? '';
+  final Map<String, String> _wsUrls = {
+    'forex': 'wss://api.itick.org/fws',
+    'stocks': 'wss://api.itick.org/sws',
+    'indices': 'wss://api.itick.org/iws',
+    'crypto': 'wss://api.itick.org/cws',
+  };
+
+  String get _apiKey => Platform.environment['ITICK_API_KEY']!;
 
   Future<void> initialize() async {
     if (_apiKey.isEmpty) {
@@ -68,11 +74,12 @@ class StockWSService {
     }
   }
 
-  Future<void> _connect() async {
+  Future<void> _connect(String marketType) async {
     if (_isConnected) return;
 
     try {
-      _channel = WebSocketChannel.connect(Uri.parse(_wsUrl));
+      final wsUrl = _wsUrls[marketType] ?? _wsUrls['stocks'];
+      _channel = WebSocketChannel.connect(Uri.parse(wsUrl!));
       _isConnected = true;
       _channel!.stream.listen(
         _onData,
@@ -82,7 +89,7 @@ class StockWSService {
 
       // Send authentication request
       _authenticate();
-      log('WebSocket connected to iTick API');
+      log('WebSocket connected to iTick API for $marketType');
     } catch (e) {
       _isConnected = false;
       log('Failed to connect to WebSocket: $e');
@@ -167,14 +174,14 @@ class StockWSService {
     _channel = null;
   }
 
-  Stream<StockQuote> subscribeToQuote(String symbol) {
+  Stream<StockQuote> subscribeToQuote(String symbol, String marketType) {
     // Create a StreamController if it doesn't exist
     if (!_quoteStreamControllers.containsKey(symbol)) {
       _quoteStreamControllers[symbol] =
           StreamController<StockQuote>.broadcast();
     }
 
-    _connect().then((_) {
+    _connect(marketType).then((_) {
       if (_isAuthenticated) {
         _channel?.sink.add(
             jsonEncode({'ac': 'subscribe', 'params': symbol, 'types': 'tick'}));
