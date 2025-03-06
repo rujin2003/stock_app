@@ -26,7 +26,6 @@ class _SearchViewState extends ConsumerState<SearchView> {
   Widget build(BuildContext context) {
     // Watch providers for reactive UI updates
     final stockType = ref.watch(stockTypeProvider);
-    final searchQuery = ref.watch(searchQueryProvider);
     final filteredData = ref.watch(filteredStockItemsProvider);
 
     return Container(
