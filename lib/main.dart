@@ -7,7 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(
-    fileName: "config.txt",
+    fileName: "config.env",
   );
   await Supabase.initialize(
     url: dotenv.env['SUPABASE_URL']!,
