@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/watchlist_provider.dart';
 import '../providers/stock_quote_provider.dart';
 import '../providers/selected_stock_provider.dart';
+import '../models/stock_item.dart';
 
 class WatchlistView extends ConsumerWidget {
   const WatchlistView({super.key});
@@ -93,7 +94,7 @@ class StockListTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final stockQuoteAsync = ref.watch(stockQuoteProvider((symbol, marketType)));
     final selectedStock = ref.watch(selectedStockProvider);
-    final isSelected = selectedStock == symbol;
+    final isSelected = selectedStock?.symbol == symbol;
 
     return stockQuoteAsync.when(
       data: (quote) {
@@ -172,7 +173,13 @@ class StockListTile extends ConsumerWidget {
             ],
           ),
           onTap: () {
-            ref.read(selectedStockProvider.notifier).selectStock(symbol);
+            final stockItem = StockItem(
+              symbol: symbol,
+              type: marketType,
+              name: '', // These could be stored in your watchlist data
+              exchange: '',
+            );
+            ref.read(selectedStockProvider.notifier).selectStock(stockItem);
           },
         );
       },

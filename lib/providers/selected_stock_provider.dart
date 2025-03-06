@@ -1,15 +1,16 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/stock_item.dart';
 
 final selectedStockProvider =
-    StateNotifierProvider<SelectedStockNotifier, String?>(
+    StateNotifierProvider<SelectedStockNotifier, StockItem?>(
   (ref) => SelectedStockNotifier(),
 );
 
-class SelectedStockNotifier extends StateNotifier<String?> {
+class SelectedStockNotifier extends StateNotifier<StockItem?> {
   SelectedStockNotifier() : super(null);
 
-  void selectStock(String symbol) {
-    state = symbol;
+  void selectStock(StockItem stock) {
+    state = stock;
   }
 
   void clearSelection() {

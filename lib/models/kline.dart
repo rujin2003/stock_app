@@ -35,6 +35,7 @@ class KlineData {
   final int volume;
   final double amount;
   final int timestamp;
+  final String marketType;
 
   KlineData({
     required this.open,
@@ -44,9 +45,11 @@ class KlineData {
     required this.volume,
     required this.amount,
     required this.timestamp,
+    required this.marketType,
   });
 
-  factory KlineData.fromJson(Map<String, dynamic> json) {
+  factory KlineData.fromJson(Map<String, dynamic> json,
+      {String marketType = 'stock'}) {
     return KlineData(
       open: (json['o'] ?? 0.0).toDouble(),
       close: (json['c'] ?? 0.0).toDouble(),
@@ -55,6 +58,7 @@ class KlineData {
       volume: (json['v'] ?? 0).toInt(),
       amount: (json['tu'] ?? 0.0).toDouble(),
       timestamp: (json['t'] ?? 0).toInt(),
+      marketType: marketType,
     );
   }
 }

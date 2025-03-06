@@ -8,17 +8,41 @@ class KlineChart extends StatelessWidget {
 
   const KlineChart({super.key, required this.klineData});
 
+  String _getChartTitle(String marketType) {
+    switch (marketType) {
+      case 'forex':
+        return 'Forex Chart';
+      case 'crypto':
+        return 'Crypto Chart';
+      case 'indices':
+        return 'Index Chart';
+      default:
+        return 'Stock Chart';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (klineData.isEmpty) {
+      return const Center(child: Text('No data available'));
+    }
+
+    final marketType = klineData.first.marketType;
+
     return SfCartesianChart(
+      title: ChartTitle(text: _getChartTitle(marketType)),
       plotAreaBorderWidth: 0,
+      enableAxisAnimation: false,
       primaryXAxis: DateTimeAxis(
         majorGridLines: const MajorGridLines(width: 0),
         dateFormat: DateFormat.MMMd(),
+        intervalType: DateTimeIntervalType.auto,
       ),
       primaryYAxis: NumericAxis(
         majorGridLines: const MajorGridLines(width: 0.5, color: Colors.grey),
         axisLine: const AxisLine(width: 0),
+        numberFormat: NumberFormat.currency(
+            symbol: '\$', decimalDigits: marketType == 'forex' ? 4 : 2),
       ),
       series: <CandleSeries<KlineData, DateTime>>[
         CandleSeries<KlineData, DateTime>(
@@ -31,6 +55,7 @@ class KlineChart extends StatelessWidget {
           closeValueMapper: (KlineData data, _) => data.close,
           bearColor: Colors.red,
           bullColor: Colors.green,
+          enableTooltip: true,
         ),
       ],
       zoomPanBehavior: ZoomPanBehavior(
@@ -44,7 +69,16 @@ class KlineChart extends StatelessWidget {
         enable: true,
         activationMode: ActivationMode.singleTap,
       ),
-      tooltipBehavior: TooltipBehavior(enable: true),
+      // tooltipBehavior: TooltipBehavior(
+      //   enable: true,
+      //   format:
+      //       'High: point.high\nLow: point.low\nOpen: point.open\nClose: point.close',
+      // ),
+      // legend: Legend(isVisible: true),
+      trackballBehavior: TrackballBehavior(
+        enable: true,
+        tooltipDisplayMode: TrackballDisplayMode.groupAllPoints,
+      ),
     );
   }
 }

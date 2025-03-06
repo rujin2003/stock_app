@@ -11,7 +11,7 @@ class DashboardPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final selectedStockSymbol = ref.watch(selectedStockProvider);
+    final selectedStock = ref.watch(selectedStockProvider);
 
     return Scaffold(
       body: Container(
@@ -52,9 +52,10 @@ class DashboardPage extends ConsumerWidget {
                     ),
                     const SizedBox(width: 16),
                     Expanded(
-                      child: selectedStockSymbol != null
+                      child: selectedStock != null
                           ? ref
-                              .watch(stockKlineProvider(selectedStockSymbol))
+                              .watch(stockKlineProvider(
+                                  (selectedStock.symbol, selectedStock.type)))
                               .when(
                                 data: (klineData) =>
                                     KlineChart(klineData: klineData),
