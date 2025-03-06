@@ -70,7 +70,7 @@ class WatchlistStatusNotifier extends AsyncNotifier<Map<String, bool>> {
       updatedMap[item.symbol] = currentStatus;
       state = AsyncData(updatedMap);
       // Also surface the error
-      throw e;
+      rethrow;
     }
   }
 
