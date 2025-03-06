@@ -13,6 +13,7 @@ class StockQuote {
   final double low;
   final int volume;
   final double lastDayClose;
+  final double openingPrice;
 
   StockQuote({
     required this.symbol,
@@ -23,16 +24,19 @@ class StockQuote {
     required this.low,
     required this.volume,
     required this.lastDayClose,
+    required this.openingPrice,
   });
 
   factory StockQuote.fromJson(Map<String, dynamic> json) {
     final symbol = json['s'] ?? '';
     final lastDayClose = double.tryParse(json['ld']?.toString() ?? '0') ?? 0.0;
-    final currentPrice =
-        double.tryParse(json['o']?.toString() ?? '0') ?? lastDayClose;
-    final change = currentPrice - lastDayClose;
+    final openingPrice = double.tryParse(json['o']?.toString() ?? '0') ?? 0.0;
+    final currentPrice = lastDayClose;
+
+    // Calculate change from opening price
+    final change = currentPrice - openingPrice;
     final changePercent =
-        lastDayClose > 0 ? (change / lastDayClose) * 100 : 0.0;
+        openingPrice > 0 ? (change / openingPrice) * 100 : 0.0;
 
     return StockQuote(
       symbol: symbol,
@@ -43,6 +47,7 @@ class StockQuote {
       low: double.tryParse(json['l']?.toString() ?? '0') ?? 0.0,
       volume: int.tryParse(json['v']?.toString() ?? '0') ?? 0,
       lastDayClose: lastDayClose,
+      openingPrice: openingPrice,
     );
   }
 }

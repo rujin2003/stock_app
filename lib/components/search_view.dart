@@ -4,34 +4,30 @@ import '../models/stock_item.dart';
 import '../providers/stock_provider.dart';
 import '../providers/watchlist_provider.dart';
 
-class SearchView extends ConsumerWidget {
+class SearchView extends ConsumerStatefulWidget {
   const SearchView({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SearchView> createState() => _SearchViewState();
+}
+
+class _SearchViewState extends ConsumerState<SearchView> {
+  @override
+  void initState() {
+    super.initState();
+    // Trigger initial load of watchlist status
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final stockType = ref.read(stockTypeProvider);
+      ref.read(watchlistStatusLoaderProvider(stockType).future);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     // Watch providers for reactive UI updates
     final stockType = ref.watch(stockTypeProvider);
-
-    // Get filtered items based on current search query
-    final filteredItems = ref.watch(filteredStockItemsProvider);
-
-    // Watch the stock items state to show loading/error states
-    final stockItemsState = ref.watch(stockItemsNotifierProvider);
-
-    // Watch the watchlist state
-    final watchlistState = ref.watch(watchlistStatusProvider);
-
-    // When items are loaded, check their watchlist status
-    ref.listen<AsyncValue<List<StockItem>>>(
-      stockItemsNotifierProvider,
-      (previous, next) {
-        if (next.hasValue && next.value != null && next.value!.isNotEmpty) {
-          ref
-              .read(watchlistStatusProvider.notifier)
-              .loadWatchlistStatus(next.value!);
-        }
-      },
-    );
+    final searchQuery = ref.watch(searchQueryProvider);
+    final filteredData = ref.watch(filteredStockItemsProvider);
 
     return Container(
       constraints: BoxConstraints(
@@ -63,8 +59,7 @@ class SearchView extends ConsumerWidget {
                     child: _buildCategoryList(context, ref, stockType),
                   ),
                   Expanded(
-                    child: _buildStockList(context, ref, filteredItems,
-                        stockItemsState, watchlistState),
+                    child: _buildStockList(context, ref, filteredData),
                   ),
                 ],
               ),
@@ -131,99 +126,63 @@ class SearchView extends ConsumerWidget {
       selected: type == currentType,
       title: Text(type.capitalize()),
       onTap: () {
-        // Update the type and fetch stocks for this type
+        // Update the type
         ref.read(stockTypeProvider.notifier).update((_) => type);
-        ref.read(stockItemsNotifierProvider.notifier).fetchStocks(type);
+        // Load watchlist status for the new type
+        ref.read(watchlistStatusLoaderProvider(type).future);
       },
     );
   }
 
   Widget _buildStockList(
-      BuildContext context,
-      WidgetRef ref,
-      List<StockItem> filteredItems,
-      AsyncValue<List<StockItem>> stockItemsState,
-      AsyncValue<Map<String, bool>> watchlistState) {
-    return stockItemsState.when(
-      loading: () => Center(child: CircularProgressIndicator()),
-      error: (err, stack) => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text("Error: ${err.toString()}"),
-            ElevatedButton(
-              onPressed: () => ref
-                  .read(stockItemsNotifierProvider.notifier)
-                  .fetchStocks(ref.read(stockTypeProvider)),
-              child: Text('Retry'),
-            ),
-          ],
-        ),
-      ),
-      data: (_) {
-        if (filteredItems.isEmpty) {
-          return Center(child: Text("No results found"));
-        }
+      BuildContext context, WidgetRef ref, Map<String, dynamic> filteredData) {
+    final itemsWithStatus = filteredData['items'] as List<Map<String, dynamic>>;
 
-        return ListView.builder(
-          itemCount: filteredItems.length,
-          itemBuilder: (context, index) {
-            final item = filteredItems[index];
+    if (itemsWithStatus.isEmpty) {
+      return Center(child: Text("No results found"));
+    }
 
-            return ListTile(
-              title: Text(
-                item.symbol,
-                style: TextStyle(fontWeight: FontWeight.bold),
+    return ListView.builder(
+      itemCount: itemsWithStatus.length,
+      itemBuilder: (context, index) {
+        final itemData = itemsWithStatus[index];
+        final item = itemData['item'] as StockItem;
+        final isInWatchlist = itemData['isInWatchlist'] as bool;
+
+        return ListTile(
+          title: Text(
+            item.symbol,
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          subtitle: Text(item.name),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                item.exchange,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey,
+                ),
               ),
-              subtitle: Text(item.name),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    item.exchange,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey,
-                    ),
-                  ),
-                  SizedBox(width: 12),
-                  _buildWatchlistButton(context, ref, item, watchlistState),
-                ],
-              ),
-            );
-          },
+              SizedBox(width: 12),
+              _buildWatchlistButton(context, ref, item, isInWatchlist),
+            ],
+          ),
         );
       },
     );
   }
 
-  Widget _buildWatchlistButton(BuildContext context, WidgetRef ref,
-      StockItem item, AsyncValue<Map<String, bool>> watchlistState) {
-    return watchlistState.when(
-      loading: () => SizedBox(
-        width: 24,
-        height: 24,
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-        ),
+  Widget _buildWatchlistButton(
+      BuildContext context, WidgetRef ref, StockItem item, bool isInWatchlist) {
+    return IconButton(
+      icon: Icon(
+        isInWatchlist ? Icons.remove_circle_outline : Icons.add_circle_outline,
+        color: isInWatchlist ? Colors.red : Colors.green,
       ),
-      error: (_, __) => Icon(
-        Icons.error_outline,
-        color: Colors.red,
-      ),
-      data: (watchlistMap) {
-        final isInWatchlist = watchlistMap[item.symbol] ?? false;
-        return IconButton(
-          icon: Icon(
-            isInWatchlist
-                ? Icons.remove_circle_outline
-                : Icons.add_circle_outline,
-            color: isInWatchlist ? Colors.red : Colors.green,
-          ),
-          onPressed: () => _toggleWatchlist(context, ref, item),
-          tooltip: isInWatchlist ? 'Remove from Watchlist' : 'Add to Watchlist',
-        );
-      },
+      onPressed: () => _toggleWatchlist(context, ref, item),
+      tooltip: isInWatchlist ? 'Remove from Watchlist' : 'Add to Watchlist',
     );
   }
 
@@ -243,6 +202,10 @@ class SearchView extends ConsumerWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
       );
+
+      // Refresh the watchlist status
+      final stockType = ref.read(stockTypeProvider);
+      ref.read(watchlistStatusLoaderProvider(stockType).future);
     } catch (e) {
       if (!context.mounted) return;
 

@@ -62,9 +62,9 @@ class StockTradingView extends ConsumerWidget {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '+${quote.change.toStringAsFixed(4)} +${quote.changePercent.toStringAsFixed(2)}%',
+                  '${quote.change >= 0 ? '+' : ''}${quote.change.toStringAsFixed(4)} ${quote.change >= 0 ? '+' : ''}${quote.changePercent.toStringAsFixed(2)}%',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: Colors.green,
+                        color: quote.change >= 0 ? Colors.green : Colors.red,
                       ),
                 ),
               ],
@@ -73,11 +73,11 @@ class StockTradingView extends ConsumerWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _buildOHLCItem(context, 'O', quote.price.toStringAsFixed(4)),
+                _buildOHLCItem(
+                    context, 'O', quote.openingPrice.toStringAsFixed(4)),
                 _buildOHLCItem(context, 'H', quote.high.toStringAsFixed(4)),
                 _buildOHLCItem(context, 'L', quote.low.toStringAsFixed(4)),
-                _buildOHLCItem(
-                    context, 'C', quote.lastDayClose.toStringAsFixed(4)),
+                _buildOHLCItem(context, 'C', quote.price.toStringAsFixed(4)),
               ],
             ),
             const SizedBox(height: 24),

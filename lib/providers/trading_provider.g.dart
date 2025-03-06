@@ -37,7 +37,7 @@ final userTransactionsProvider = AutoDisposeAsyncNotifierProvider<
 );
 
 typedef _$UserTransactions = AutoDisposeAsyncNotifier<List<Transaction>>;
-String _$createTransactionHash() => r'4e5e547af4115f083a872ccbe7af0bcc06d70f31';
+String _$createTransactionHash() => r'ee4140930a95ffad125edf505e48f27655af659d';
 
 /// See also [CreateTransaction].
 @ProviderFor(CreateTransaction)
