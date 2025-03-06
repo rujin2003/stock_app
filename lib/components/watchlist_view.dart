@@ -23,14 +23,14 @@ class WatchlistView extends ConsumerWidget {
           );
         }
 
-        final groupedItems = <String, List<String>>{};
+        final groupedItems = <String, List<StockItem>>{};
 
         for (final item in items) {
-          final type = item.type.isNotEmpty ? item.type : 'Unknown';
+          final type = item.type.toUpperCase();
           if (!groupedItems.containsKey(type)) {
             groupedItems[type] = [];
           }
-          groupedItems[type]!.add(item.symbol);
+          groupedItems[type]!.add(item);
         }
 
         final sortedTypes = groupedItems.keys.toList()..sort();
@@ -40,19 +40,35 @@ class WatchlistView extends ConsumerWidget {
           itemCount: sortedTypes.length,
           itemBuilder: (context, index) {
             final type = sortedTypes[index];
-            final symbols = groupedItems[type]!..sort();
+            final typeItems = groupedItems[type]!;
 
-            return ExpansionTile(
-              title: Text(
-                type.toUpperCase(),
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              initiallyExpanded: true,
-              children: symbols
-                  .map(
-                    (symbol) => StockListTile(symbol: symbol, marketType: type),
-                  )
-                  .toList(),
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: Text(
+                    type,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: Colors.grey[600],
+                          fontWeight: FontWeight.w500,
+                        ),
+                  ),
+                ),
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: typeItems.length,
+                  itemBuilder: (context, itemIndex) {
+                    final item = typeItems[itemIndex];
+                    return StockListTile(
+                      symbol: item.symbol,
+                      marketType: item.type,
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+              ],
             );
           },
         );
@@ -63,12 +79,12 @@ class WatchlistView extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Error loading watchlist: ${error.toString()}',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyLarge
-                  ?.copyWith(color: Colors.red),
+              'Error loading watchlist',
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: Colors.red,
+                  ),
             ),
+            const SizedBox(height: 8),
             ElevatedButton(
               onPressed: () => ref.refresh(watchlistItemsProvider),
               child: const Text('Retry'),
@@ -99,76 +115,52 @@ class StockListTile extends ConsumerWidget {
     return stockQuoteAsync.when(
       data: (quote) {
         final isPositive = quote.change >= 0;
-        final changeColor =
-            isPositive ? const Color.fromARGB(255, 116, 118, 116) : Colors.red;
-        final changeIcon = isPositive
-            ? const Icon(Icons.arrow_upward, size: 12)
-            : const Icon(Icons.arrow_downward, size: 12);
+        final changeColor = isPositive ? Colors.green : Colors.red;
 
         return ListTile(
           dense: true,
           selected: isSelected,
           selectedTileColor: Colors.blue.withOpacity(0.1),
+          contentPadding: EdgeInsets.zero,
           title: Row(
             children: [
-              Expanded(
-                flex: 2,
+              CircleAvatar(
+                radius: 12,
+                backgroundColor: Colors.red.withOpacity(0.1),
                 child: Text(
-                  symbol,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                  symbol[0],
+                  style: TextStyle(
+                    color: Colors.red,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
-              Expanded(
-                flex: 2,
-                child: Text(
-                  '\$${quote.price.toStringAsFixed(2)}',
-                  textAlign: TextAlign.right,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ),
-              Expanded(
-                flex: 3,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    changeIcon,
-                    const SizedBox(width: 4),
-                    Text(
-                      '${quote.change.toStringAsFixed(2)} (${quote.changePercent.toStringAsFixed(2)}%)',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: changeColor,
-                          ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'H: \$${quote.high.toStringAsFixed(2)}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  Text(
-                    'L: \$${quote.low.toStringAsFixed(2)}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  Text(
-                    'Close: \$${quote.lastDayClose.toStringAsFixed(2)}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ),
+              const SizedBox(width: 8),
               Text(
-                'Vol: ${_formatVolume(quote.volume)}',
-                style: Theme.of(context).textTheme.bodySmall,
+                symbol,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
+              ),
+              const Spacer(),
+              Text(
+                quote.price.toStringAsFixed(2),
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(width: 16),
+              Text(
+                quote.change.toStringAsFixed(2),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: changeColor,
+                    ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${quote.changePercent.toStringAsFixed(2)}%',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: changeColor,
+                    ),
               ),
             ],
           ),
@@ -176,44 +168,29 @@ class StockListTile extends ConsumerWidget {
             final stockItem = StockItem(
               symbol: symbol,
               type: marketType,
-              name: '', // These could be stored in your watchlist data
+              name: '',
               exchange: '',
             );
             ref.read(selectedStockProvider.notifier).selectStock(stockItem);
           },
         );
       },
-      loading: () => ListTile(
+      loading: () => const ListTile(
         dense: true,
-        title: Row(
-          children: [
-            Text(
-              symbol,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            const Spacer(),
-            const SizedBox(
-              width: 12,
-              height: 12,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          ],
+        contentPadding: EdgeInsets.zero,
+        leading: SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
         ),
       ),
       error: (error, stackTrace) => ListTile(
         dense: true,
+        contentPadding: EdgeInsets.zero,
         title: Text(
           symbol,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-        ),
-        subtitle: Text(
-          'Unable to load data',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Colors.red,
+                fontWeight: FontWeight.w500,
               ),
         ),
         trailing: IconButton(
@@ -223,17 +200,5 @@ class StockListTile extends ConsumerWidget {
         ),
       ),
     );
-  }
-
-  String _formatVolume(int volume) {
-    if (volume >= 1000000000) {
-      return '${(volume / 1000000000).toStringAsFixed(1)}B';
-    } else if (volume >= 1000000) {
-      return '${(volume / 1000000).toStringAsFixed(1)}M';
-    } else if (volume >= 1000) {
-      return '${(volume / 1000).toStringAsFixed(1)}K';
-    } else {
-      return volume.toString();
-    }
   }
 }

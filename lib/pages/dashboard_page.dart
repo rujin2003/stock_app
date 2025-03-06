@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stock_app/components/search_view.dart';
 import 'package:stock_app/components/watchlist_view.dart';
 import 'package:stock_app/components/kline_chart.dart';
+import 'package:stock_app/components/stock_trading_view.dart';
 import 'package:stock_app/providers/stock_kline_provider.dart';
 import 'package:stock_app/providers/selected_stock_provider.dart';
 
@@ -33,19 +34,29 @@ class DashboardPage extends ConsumerWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
+                    SizedBox(
                       width: MediaQuery.of(context).size.width * 0.3,
-                      padding: const EdgeInsets.all(12),
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            "WATCHLIST",
-                            style: Theme.of(context).textTheme.bodyLarge,
-                          ),
-                          const SizedBox(height: 8),
+                          const StockTradingView(),
                           Expanded(
-                            child: WatchlistView(),
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    "WATCHLIST",
+                                    style:
+                                        Theme.of(context).textTheme.bodyLarge,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Expanded(
+                                    child: WatchlistView(),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -104,11 +115,10 @@ class TopBar extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8),
         child: Row(
-          spacing: 12,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Image.asset("assets/images/top_logo.png"),
-            VerticalDivider(),
+            const VerticalDivider(),
             GestureDetector(
               onTap: () {
                 showDialog(
@@ -126,39 +136,39 @@ class TopBar extends StatelessWidget {
                 );
               },
               child: Row(
-                spacing: 8,
-                children: [
-                  const Icon(Icons.search),
+                children: const [
+                  Icon(Icons.search),
+                  SizedBox(width: 8),
                   Text("Search"),
                 ],
               ),
             ),
-            VerticalDivider(),
+            const VerticalDivider(),
             Row(
-              spacing: 8,
-              children: [
-                const Icon(Icons.stacked_line_chart),
+              children: const [
+                Icon(Icons.stacked_line_chart),
+                SizedBox(width: 8),
                 Text("Indicators"),
               ],
             ),
-            VerticalDivider(),
+            const VerticalDivider(),
             Row(
-              spacing: 8,
-              children: [
-                const Icon(Icons.notification_add),
+              children: const [
+                Icon(Icons.notification_add),
+                SizedBox(width: 8),
                 Text("Alert"),
               ],
             ),
-            Spacer(),
+            const Spacer(),
             IconButton(
               onPressed: () {},
-              icon: Icon(
+              icon: const Icon(
                 Icons.notifications,
               ),
             ),
             IconButton(
               onPressed: () {},
-              icon: Icon(
+              icon: const Icon(
                 Icons.person,
               ),
             ),
