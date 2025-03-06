@@ -248,16 +248,4 @@ class StockTradingView extends ConsumerWidget {
       ),
     );
   }
-
-  String _formatVolume(int volume) {
-    if (volume >= 1000000000) {
-      return '${(volume / 1000000000).toStringAsFixed(1)}B';
-    } else if (volume >= 1000000) {
-      return '${(volume / 1000000).toStringAsFixed(1)}M';
-    } else if (volume >= 1000) {
-      return '${(volume / 1000).toStringAsFixed(1)}K';
-    } else {
-      return volume.toString();
-    }
-  }
 }
