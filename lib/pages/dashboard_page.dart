@@ -6,12 +6,22 @@ import 'package:stock_app/components/kline_chart.dart';
 import 'package:stock_app/components/stock_trading_view.dart';
 import 'package:stock_app/providers/stock_kline_provider.dart';
 import 'package:stock_app/providers/selected_stock_provider.dart';
+import 'package:stock_app/pages/mobile_dashboard_page.dart';
 
 class DashboardPage extends ConsumerWidget {
   const DashboardPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Check screen width to determine which layout to use
+    final screenWidth = MediaQuery.of(context).size.width;
+    final bool isMobileView = screenWidth < 1000; // Standard tablet breakpoint
+
+    if (isMobileView) {
+      return const MobileDashboardPage();
+    }
+
+    // Desktop view
     final selectedStock = ref.watch(selectedStockProvider);
 
     return Scaffold(
@@ -51,7 +61,7 @@ class DashboardPage extends ConsumerWidget {
                                         Theme.of(context).textTheme.bodyLarge,
                                   ),
                                   const SizedBox(height: 8),
-                                  Expanded(
+                                  const Expanded(
                                     child: WatchlistView(),
                                   ),
                                 ],
@@ -65,11 +75,14 @@ class DashboardPage extends ConsumerWidget {
                     Expanded(
                       child: selectedStock != null
                           ? ref
-                              .watch(stockKlineProvider(
+                              .watch(stockKlineStreamProvider(
                                   (selectedStock.symbol, selectedStock.type)))
                               .when(
-                                data: (klineData) =>
-                                    KlineChart(klineData: klineData),
+                                data: (klineData) => KlineChart(
+                                  klineData: klineData,
+                                  symbol: selectedStock.symbol,
+                                  marketType: selectedStock.type,
+                                ),
                                 loading: () => const Center(
                                     child: CircularProgressIndicator()),
                                 error: (error, stackTrace) =>

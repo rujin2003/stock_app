@@ -57,6 +57,7 @@ class CreateTransaction extends _$CreateTransaction {
     required String type,
     required double price,
     required int units,
+    double leverage = 1.0,
   }) async {
     final user = ref.read(authProvider);
     if (user == null) throw Exception('User not authenticated');
@@ -68,6 +69,7 @@ class CreateTransaction extends _$CreateTransaction {
       type: type,
       price: price,
       units: units,
+      leverage: leverage,
     );
 
     // Refresh holdings, transactions, and balance

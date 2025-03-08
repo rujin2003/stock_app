@@ -30,23 +30,44 @@ class TradingService {
     });
   }
 
-  // Create a new transaction
+  // Calculate required margin for a leveraged position
+  double calculateRequiredMargin(double price, int units, double leverage) {
+    final positionSize = price * units;
+    return positionSize / leverage;
+  }
+
+  // Calculate liquidation price for a leveraged position
+  double calculateLiquidationPrice(
+      String type, double entryPrice, double leverage) {
+    final maintenanceMargin = 0.5; // 50% maintenance margin requirement
+    if (type == 'buy') {
+      return entryPrice * (1 - (1 / leverage) + maintenanceMargin);
+    } else {
+      return entryPrice * (1 + (1 / leverage) - maintenanceMargin);
+    }
+  }
+
+  // Create a new leveraged transaction
   Future<Transaction> createTransaction({
     required String userId,
     required String symbol,
     required String type,
     required double price,
     required int units,
+    double leverage = 1.0,
   }) async {
-    final totalAmount = price * units;
+    final positionSize = price * units;
+    final requiredMargin = calculateRequiredMargin(price, units, leverage);
+    final liquidationPrice = calculateLiquidationPrice(type, price, leverage);
 
     // Get current balance
     final currentBalance = await getUserBalance(userId);
     final balance = currentBalance?.balance ?? 0.0;
 
-    // Check if user has enough balance for buy
-    if (type == 'buy' && balance < totalAmount) {
-      throw Exception('Insufficient balance');
+    // Check if user has enough balance for margin
+    if (balance < requiredMargin) {
+      throw Exception(
+          'Insufficient margin: Required margin is \$${requiredMargin.toStringAsFixed(2)}');
     }
 
     // Start a transaction
@@ -56,12 +77,14 @@ class TradingService {
       'p_type': type,
       'p_price': price,
       'p_units': units,
-      'p_total_amount': totalAmount,
+      'p_total_amount': positionSize,
+      'p_leverage': leverage,
+      'p_margin': requiredMargin,
+      'p_liquidation_price': liquidationPrice,
     });
 
-    // Update user's balance
-    final newBalance =
-        type == 'buy' ? balance - totalAmount : balance + totalAmount;
+    // Update user's balance (deduct margin)
+    final newBalance = balance - requiredMargin;
     await updateUserBalance(userId, newBalance);
 
     return Transaction.fromJson(response);

@@ -1,16 +1,23 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/kline_service.dart';
 import '../models/kline.dart';
+import '../models/kline_type.dart';
 
 final klineServiceProvider = Provider<KlineService>((ref) {
-  return KlineService();
+  final service = KlineService();
+  ref.onDispose(() => service.dispose());
+  return service;
+});
+
+final selectedKLineTypeProvider = StateProvider<KLineType>((ref) {
+  return KLineType.oneDay;
 });
 
 // Input is a tuple of (symbol, marketType)
-final stockKlineProvider =
-    FutureProvider.family<List<KlineData>, (String, String)>(
-        (ref, params) async {
+final stockKlineStreamProvider =
+    StreamProvider.family<List<KlineData>, (String, String)>((ref, params) {
   final service = ref.read(klineServiceProvider);
+  final klineType = ref.watch(selectedKLineTypeProvider);
   final (symbol, marketType) = params;
-  return service.getKlineData(symbol, marketType);
+  return service.getKlineStream(symbol, marketType, klineType);
 });

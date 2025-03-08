@@ -7,6 +7,9 @@ class Transaction {
   final int units;
   final double totalAmount;
   final DateTime timestamp;
+  final double leverage; // Leverage multiplier (e.g., 2x, 5x, 10x)
+  final double margin; // Initial margin required
+  final double liquidationPrice; // Price at which position will be liquidated
 
   Transaction({
     required this.id,
@@ -17,6 +20,9 @@ class Transaction {
     required this.units,
     required this.totalAmount,
     required this.timestamp,
+    this.leverage = 1.0,
+    this.margin = 0.0,
+    this.liquidationPrice = 0.0,
   });
 
   factory Transaction.fromJson(Map<String, dynamic> json) {
@@ -29,6 +35,9 @@ class Transaction {
       units: json['units'],
       totalAmount: json['total_amount'].toDouble(),
       timestamp: DateTime.parse(json['timestamp']),
+      leverage: json['leverage']?.toDouble() ?? 1.0,
+      margin: json['margin']?.toDouble() ?? 0.0,
+      liquidationPrice: json['liquidation_price']?.toDouble() ?? 0.0,
     );
   }
 
@@ -42,6 +51,9 @@ class Transaction {
       'units': units,
       'total_amount': totalAmount,
       'timestamp': timestamp.toIso8601String(),
+      'leverage': leverage,
+      'margin': margin,
+      'liquidation_price': liquidationPrice,
     };
   }
 }

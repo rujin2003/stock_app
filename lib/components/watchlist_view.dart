@@ -11,6 +11,7 @@ class WatchlistView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final watchlistItemsAsyncValue = ref.watch(watchlistItemsProvider);
+    final isMobile = MediaQuery.of(context).size.width < 768;
 
     return watchlistItemsAsyncValue.when(
       data: (items) {
@@ -45,16 +46,18 @@ class WatchlistView extends ConsumerWidget {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8.0),
-                  child: Text(
-                    type,
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          color: Colors.grey[600],
-                          fontWeight: FontWeight.w500,
-                        ),
+                if (!isMobile) ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: Text(
+                      type,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.w500,
+                          ),
+                    ),
                   ),
-                ),
+                ],
                 ListView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
@@ -64,10 +67,11 @@ class WatchlistView extends ConsumerWidget {
                     return StockListTile(
                       symbol: item.symbol,
                       marketType: item.type,
+                      isMobile: isMobile,
                     );
                   },
                 ),
-                const Divider(height: 1),
+                if (!isMobile) const Divider(height: 1),
               ],
             );
           },
@@ -99,11 +103,13 @@ class WatchlistView extends ConsumerWidget {
 class StockListTile extends ConsumerWidget {
   final String symbol;
   final String marketType;
+  final bool isMobile;
 
   const StockListTile({
     super.key,
     required this.symbol,
     required this.marketType,
+    required this.isMobile,
   });
 
   @override
@@ -112,55 +118,123 @@ class StockListTile extends ConsumerWidget {
     final selectedStock = ref.watch(selectedStockProvider);
     final isSelected = selectedStock?.symbol == symbol;
 
-    return stockQuoteAsync.when(
-      data: (quote) {
-        final isPositive = quote.change >= 0;
-        final changeColor = isPositive ? Colors.green : Colors.red;
+    Widget buildStockInfo({
+      required BuildContext context,
+      double? price,
+      double? change,
+      double? changePercent,
+      bool isLoading = false,
+    }) {
+      final hasData = price != null && change != null && changePercent != null;
+      final isPositive = hasData && change >= 0;
+      final changeColor =
+          hasData ? (isPositive ? Colors.green : Colors.red) : Colors.grey;
 
-        return ListTile(
-          dense: true,
+      return Container(
+        decoration: BoxDecoration(
+          color: isMobile ? Colors.white : null,
+          border: isMobile
+              ? Border(
+                  bottom: BorderSide(
+                    color: Colors.grey.withOpacity(0.2),
+                    width: 1,
+                  ),
+                )
+              : null,
+        ),
+        child: ListTile(
+          dense: !isMobile,
           selected: isSelected,
           selectedTileColor: Colors.blue.withOpacity(0.1),
-          contentPadding: EdgeInsets.zero,
+          contentPadding: isMobile
+              ? const EdgeInsets.symmetric(horizontal: 16.0)
+              : EdgeInsets.zero,
           title: Row(
             children: [
               CircleAvatar(
-                radius: 12,
+                radius: isMobile ? 16 : 12,
                 backgroundColor: Colors.red.withOpacity(0.1),
                 child: Text(
                   symbol[0],
                   style: TextStyle(
                     color: Colors.red,
-                    fontSize: 12,
+                    fontSize: isMobile ? 14 : 12,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                symbol,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w500,
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    symbol,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                          fontSize: isMobile ? 16 : null,
+                        ),
+                  ),
+                  if (isMobile)
+                    Text(
+                      '10:28:35 • 4',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.grey,
+                          ),
                     ),
+                ],
               ),
               const Spacer(),
-              Text(
-                quote.price.toStringAsFixed(2),
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              const SizedBox(width: 16),
-              Text(
-                quote.change.toStringAsFixed(2),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: changeColor,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    hasData ? price.toStringAsFixed(2) : "-",
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontSize: isMobile ? 16 : null,
+                          fontWeight: FontWeight.w500,
+                          color: hasData ? null : Colors.grey,
+                        ),
+                  ),
+                  if (isMobile)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          hasData ? change.toStringAsFixed(2) : "-",
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: changeColor,
+                                  ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          hasData
+                              ? '${changePercent.toStringAsFixed(2)}%'
+                              : "-",
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: changeColor,
+                                  ),
+                        ),
+                      ],
                     ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '${quote.changePercent.toStringAsFixed(2)}%',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: changeColor,
+                  if (!isMobile) ...[
+                    const SizedBox(width: 16),
+                    Text(
+                      hasData ? change.toStringAsFixed(2) : "-",
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: changeColor,
+                          ),
                     ),
+                    const SizedBox(width: 8),
+                    Text(
+                      hasData ? '${changePercent.toStringAsFixed(2)}%' : "-",
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: changeColor,
+                          ),
+                    ),
+                  ],
+                ],
               ),
             ],
           ),
@@ -173,31 +247,23 @@ class StockListTile extends ConsumerWidget {
             );
             ref.read(selectedStockProvider.notifier).selectStock(stockItem);
           },
-        );
-      },
-      loading: () => const ListTile(
-        dense: true,
-        contentPadding: EdgeInsets.zero,
-        leading: SizedBox(
-          width: 16,
-          height: 16,
-          child: CircularProgressIndicator(strokeWidth: 2),
         ),
+      );
+    }
+
+    return stockQuoteAsync.when(
+      data: (quote) => buildStockInfo(
+        context: context,
+        price: quote.price,
+        change: quote.change,
+        changePercent: quote.changePercent,
       ),
-      error: (error, stackTrace) => ListTile(
-        dense: true,
-        contentPadding: EdgeInsets.zero,
-        title: Text(
-          symbol,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w500,
-              ),
-        ),
-        trailing: IconButton(
-          icon: const Icon(Icons.refresh, size: 16),
-          onPressed: () =>
-              ref.refresh(stockQuoteProvider((symbol, marketType))),
-        ),
+      loading: () => buildStockInfo(
+        context: context,
+        isLoading: true,
+      ),
+      error: (error, stackTrace) => buildStockInfo(
+        context: context,
       ),
     );
   }

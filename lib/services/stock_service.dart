@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import '../models/stock_item.dart';
@@ -38,18 +39,17 @@ class StockService {
               .map((item) => StockItem.fromJson(item))
               .toList();
         } else {
-          print('API returned an error status: ${data['status']}');
+          log('API returned an error status: ${data['status']}');
           return [];
         }
       } else {
-        print(
-            'API request failed with status code: ${response.statusCode}'); // Log the status code
+        log('API request failed with status code: ${response.statusCode}'); // Log the status code
         return [];
       }
 
       // Return empty list if there's an error or no data
     } catch (e) {
-      print('Error fetching stock listings: $e');
+      log('Error fetching stock listings: $e');
       return [];
     }
   }
