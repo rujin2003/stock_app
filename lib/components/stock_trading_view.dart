@@ -21,7 +21,6 @@ class StockTradingView extends ConsumerWidget {
     final stockQuoteAsync = ref.watch(
       stockQuoteProvider((selectedStock.symbol, selectedStock.type)),
     );
-    final userBalanceAsync = ref.watch(userBalanceNotifierProvider);
 
     return Container(
       width: double.infinity,

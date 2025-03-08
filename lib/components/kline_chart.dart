@@ -170,8 +170,6 @@ class KlineChart extends ConsumerWidget {
         return DateTimeIntervalType.days;
       case KLineType.oneMonth:
         return DateTimeIntervalType.months;
-      default:
-        return DateTimeIntervalType.auto;
     }
   }
 
@@ -195,8 +193,6 @@ class KlineChart extends ConsumerWidget {
       case KLineType.oneWeek:
         return 1;
       case KLineType.oneMonth:
-        return 1;
-      default:
         return 1;
     }
   }
@@ -222,8 +218,6 @@ class KlineChart extends ConsumerWidget {
         return 52; // 1 year worth of weekly data
       case KLineType.oneMonth:
         return 24; // 2 years worth of monthly data
-      default:
-        return 100;
     }
   }
 }
