@@ -12,8 +12,10 @@ import '../providers/selected_stock_provider.dart';
 import '../providers/stock_kline_provider.dart';
 import '../providers/stock_quote_provider.dart';
 import '../components/advanced_order_form.dart';
+import '../components/search_view.dart';
 import '../models/stock.dart';
 import '../components/pnl_history_view.dart';
+import '../pages/mobile_search_view.dart';
 
 class MobileDashboardPage extends ConsumerStatefulWidget {
   const MobileDashboardPage({super.key});
@@ -76,6 +78,17 @@ class _MobileDashboardPageState extends ConsumerState<MobileDashboardPage> {
                   ),
                   Row(
                     children: [
+                      IconButton(
+                        icon: const Icon(Icons.search),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const MobileSearchView(),
+                            ),
+                          );
+                        },
+                      ),
                       IconButton(
                         icon: const Icon(Icons.person_outline),
                         onPressed: () {
