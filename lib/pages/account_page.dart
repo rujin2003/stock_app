@@ -9,8 +9,6 @@ class AccountPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(authProvider);
-
     return Scaffold(
       body: Container(
         width: double.infinity,
