@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:stock_app/pages/pnl_history_page.dart';
 import '../components/search_view.dart';
 import '../components/watchlist_view.dart';
 import '../components/kline_chart.dart';
@@ -11,7 +12,6 @@ import '../pages/account_page.dart';
 import '../providers/stock_kline_provider.dart';
 import '../providers/selected_stock_provider.dart';
 import '../providers/stock_quote_provider.dart';
-import '../providers/price_update_provider.dart';
 import '../pages/mobile_dashboard_page.dart';
 
 class DashboardPage extends ConsumerWidget {
@@ -90,8 +90,13 @@ class DashboardPage extends ConsumerWidget {
                                         Theme.of(context).textTheme.bodyLarge,
                                   ),
                                   const SizedBox(height: 8),
-                                  const Expanded(
-                                    child: WatchlistView(),
+                                  Expanded(
+                                    child: WatchlistView(
+                                      onStockSelected: () {
+                                        // No navigation needed in desktop view
+                                        // Chart is always visible
+                                      },
+                                    ),
                                   ),
                                 ],
                               ),
@@ -124,11 +129,6 @@ class DashboardPage extends ConsumerWidget {
                                         Center(child: Text('Error: $error')),
                                   ),
                             ),
-                          const SizedBox(height: 16),
-                          const Expanded(
-                            flex: 1,
-                            child: TransactionHistoryView(),
-                          ),
                         ],
                       ),
                     ),
@@ -197,48 +197,8 @@ class TopBar extends StatelessWidget {
               ),
             ),
             const VerticalDivider(),
-            Row(
-              children: const [
-                Icon(Icons.stacked_line_chart),
-                SizedBox(width: 8),
-                Text("Indicators"),
-              ],
-            ),
-            const VerticalDivider(),
-            Consumer(
-              builder: (context, ref, child) {
-                final selectedStock = ref.watch(selectedStockProvider);
-
-                return Row(
-                  children: [
-                    const Icon(Icons.notification_add),
-                    const SizedBox(width: 8),
-                    const Text("Alert"),
-                    if (selectedStock != null) ...[
-                      const SizedBox(width: 8),
-                      IconButton(
-                        icon: const Icon(Icons.refresh),
-                        tooltip: 'Process Orders',
-                        onPressed: () async {
-                          final updatePrice = ref
-                              .read(priceUpdateProvider(selectedStock.symbol));
-                          await updatePrice();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Orders processed'),
-                              duration: Duration(seconds: 2),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ],
-                );
-              },
-            ),
-            const Spacer(),
-            IconButton(
-              onPressed: () {
+            GestureDetector(
+              onTap: () {
                 showDialog(
                   context: context,
                   builder: (context) => Dialog(
@@ -253,9 +213,33 @@ class TopBar extends StatelessWidget {
                   ),
                 );
               },
-              icon: const Icon(Icons.history),
-              tooltip: 'Transaction History',
+              child: Row(
+                children: const [
+                  Icon(Icons.history),
+                  SizedBox(width: 8),
+                  Text("Transactions"),
+                ],
+              ),
             ),
+            const VerticalDivider(),
+            GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const PnLHistoryPage(),
+                  ),
+                );
+              },
+              child: Row(
+                children: const [
+                  Icon(Icons.attach_money),
+                  SizedBox(width: 8),
+                  Text("P&L"),
+                ],
+              ),
+            ),
+            const Spacer(),
             const NotificationBell(),
             IconButton(
               onPressed: () {
@@ -271,4 +255,9 @@ class TopBar extends StatelessWidget {
       ),
     );
   }
+}
+
+void _emptyCallback() {
+  // No navigation needed in desktop view
+  // Chart is always visible
 }

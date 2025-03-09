@@ -8,6 +8,7 @@ import 'package:stock_app/theme/app_theme_data.dart';
 import 'package:stock_app/providers/notification_provider.dart';
 import 'package:stock_app/models/notification.dart';
 import 'package:stock_app/pages/notifications_page.dart';
+import 'main.dart'; // Import for global key providers
 
 class App extends ConsumerStatefulWidget {
   const App({super.key});
@@ -17,9 +18,6 @@ class App extends ConsumerStatefulWidget {
 }
 
 class _AppState extends ConsumerState<App> {
-  final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
-      GlobalKey<ScaffoldMessengerState>();
-
   @override
   void initState() {
     super.initState();
@@ -34,28 +32,26 @@ class _AppState extends ConsumerState<App> {
       notificationStreamProvider,
       (previous, next) {
         next.whenData((notification) {
-          if (notification != null) {
-            _showNotificationSnackBar(notification);
-          }
+          _showNotificationSnackBar(notification);
         });
       },
     );
   }
 
   void _showNotificationSnackBar(AppNotification notification) {
-    _scaffoldMessengerKey.currentState?.showSnackBar(
-      SnackBar(
-        content: Text(notification.message),
-        action: SnackBarAction(
-          label: 'View',
-          onPressed: () {
-            // Navigate to notifications page
-            Navigator.of(context).pushNamed('/notifications');
-          },
-        ),
-        duration: const Duration(seconds: 5),
-      ),
-    );
+    ref.read(scaffoldMessengerKeyProvider).currentState?.showSnackBar(
+          SnackBar(
+            content: Text(notification.message),
+            action: SnackBarAction(
+              label: 'View',
+              onPressed: () {
+                // Navigate to notifications page
+                Navigator.of(context).pushNamed('/notifications');
+              },
+            ),
+            duration: const Duration(seconds: 5),
+          ),
+        );
   }
 
   @override
@@ -65,7 +61,8 @@ class _AppState extends ConsumerState<App> {
     return MaterialApp(
       title: 'Stock App',
       theme: appThemeData,
-      scaffoldMessengerKey: _scaffoldMessengerKey,
+      navigatorKey: ref.watch(navigatorKeyProvider),
+      scaffoldMessengerKey: ref.watch(scaffoldMessengerKeyProvider),
       routes: {
         '/notifications': (context) => const NotificationsPage(),
       },

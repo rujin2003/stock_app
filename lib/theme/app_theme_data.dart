@@ -3,6 +3,7 @@ import 'package:stock_app/theme/app_text_theme.dart';
 
 final appThemeData = ThemeData(
   colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+  scaffoldBackgroundColor: Colors.white,
   textTheme: appTextTheme,
   inputDecorationTheme: InputDecorationTheme(
     border: OutlineInputBorder(

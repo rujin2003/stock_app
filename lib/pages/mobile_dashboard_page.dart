@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:stock_app/pages/account_page.dart';
 import '../components/watchlist_view.dart';
 import '../components/transaction_history_view.dart';
 import '../components/kline_chart.dart';
@@ -10,6 +11,9 @@ import '../pages/notifications_page.dart';
 import '../providers/selected_stock_provider.dart';
 import '../providers/stock_kline_provider.dart';
 import '../providers/stock_quote_provider.dart';
+import '../components/advanced_order_form.dart';
+import '../models/stock.dart';
+import '../components/pnl_history_view.dart';
 
 class MobileDashboardPage extends ConsumerStatefulWidget {
   const MobileDashboardPage({super.key});
@@ -21,6 +25,32 @@ class MobileDashboardPage extends ConsumerStatefulWidget {
 
 class _MobileDashboardPageState extends ConsumerState<MobileDashboardPage> {
   int _selectedIndex = 0;
+
+  void _onStockSelected() {
+    setState(() {
+      _selectedIndex = 1;
+    });
+  }
+
+  void _showTradingForm(
+      BuildContext context, String type, Stock stock, double price) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: SingleChildScrollView(
+          child: AdvancedOrderForm(
+            stock: stock,
+            currentPrice: price,
+            type: type,
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -48,7 +78,14 @@ class _MobileDashboardPageState extends ConsumerState<MobileDashboardPage> {
                     children: [
                       IconButton(
                         icon: const Icon(Icons.person_outline),
-                        onPressed: () {},
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const AccountPage(),
+                            ),
+                          );
+                        },
                       ),
                       const NotificationBell(),
                     ],
@@ -101,59 +138,188 @@ class _MobileDashboardPageState extends ConsumerState<MobileDashboardPage> {
                           ],
                         ),
                       ),
-                      const Expanded(child: WatchlistView()),
+                      Expanded(
+                        child: WatchlistView(
+                          onStockSelected: _onStockSelected,
+                        ),
+                      ),
                     ],
                   ),
                   // Chart Tab
                   if (selectedStock != null)
-                    ref
-                        .watch(stockKlineStreamProvider(
-                            (selectedStock.symbol, selectedStock.type)))
-                        .when(
-                          data: (klineData) => KlineChart(
-                            klineData: klineData,
-                            symbol: selectedStock.symbol,
-                            marketType: selectedStock.type,
+                    Column(
+                      children: [
+                        Expanded(
+                          child: ref
+                              .watch(stockKlineStreamProvider(
+                                  (selectedStock.symbol, selectedStock.type)))
+                              .when(
+                                data: (klineData) => KlineChart(
+                                  klineData: klineData,
+                                  symbol: selectedStock.symbol,
+                                  marketType: selectedStock.type,
+                                ),
+                                loading: () => const Center(
+                                    child: CircularProgressIndicator()),
+                                error: (error, stackTrace) =>
+                                    Center(child: Text('Error: $error')),
+                              ),
+                        ),
+                        // Add Buy/Sell component below the chart
+                        if (stockQuoteAsync != null)
+                          Container(
+                            padding: const EdgeInsets.all(16.0),
+                            child: stockQuoteAsync.when(
+                              data: (quote) => Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.05),
+                                      blurRadius: 5,
+                                      spreadRadius: 1,
+                                    ),
+                                  ],
+                                ),
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              '${selectedStock.symbol} • ${selectedStock.type.toUpperCase()}',
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .titleSmall,
+                                            ),
+                                            Text(
+                                              '\$${quote.price.toStringAsFixed(4)}',
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .headlineSmall
+                                                  ?.copyWith(
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: ElevatedButton(
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.green,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      vertical: 12),
+                                            ),
+                                            onPressed: () {
+                                              _showTradingForm(
+                                                  context,
+                                                  'buy',
+                                                  selectedStock.toStock(),
+                                                  quote.price);
+                                            },
+                                            child: const Text(
+                                              'BUY',
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 16),
+                                        Expanded(
+                                          child: ElevatedButton(
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.red,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      vertical: 12),
+                                            ),
+                                            onPressed: () {
+                                              _showTradingForm(
+                                                  context,
+                                                  'sell',
+                                                  selectedStock.toStock(),
+                                                  quote.price);
+                                            },
+                                            child: const Text(
+                                              'SELL',
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              loading: () => const Center(
+                                  child: CircularProgressIndicator()),
+                              error: (error, stackTrace) =>
+                                  Center(child: Text('Error: $error')),
+                            ),
                           ),
-                          loading: () =>
-                              const Center(child: CircularProgressIndicator()),
-                          error: (error, stackTrace) =>
-                              Center(child: Text('Error: $error')),
-                        )
+                      ],
+                    )
                   else
                     const Center(child: Text('Select a stock to view chart')),
-                  // Trade Tab
+                  // History Tab
                   Column(
                     children: [
+                      // Move PnL summary here as it's related to trading
                       const Padding(
                         padding: EdgeInsets.all(16.0),
                         child: PnLSummaryView(),
                       ),
-                      if (selectedStock != null && stockQuoteAsync != null)
-                        Expanded(
-                          child: stockQuoteAsync.when(
-                            data: (quote) => StockTradingView(
-                              stock: selectedStock.toStock(),
-                              price: quote.price,
-                            ),
-                            loading: () => const Center(
-                              child: CircularProgressIndicator(),
-                            ),
-                            error: (error, stackTrace) => Center(
-                              child: Text('Error: $error'),
-                            ),
-                          ),
-                        )
-                      else
-                        const Expanded(
-                          child: Center(
-                            child: Text('Select a stock to trade'),
-                          ),
+                      // Add PnL History below the summary
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                        child: Text(
+                          'PnL History',
+                          style:
+                              Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
                         ),
+                      ),
+                      const Expanded(
+                        child: PnLHistoryView(),
+                      ),
                     ],
                   ),
-                  // History Tab
-                  const TransactionHistoryView(),
+                  // History Tab - View only
+                  Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Text(
+                          'Transaction History',
+                          style:
+                              Theme.of(context).textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                        ),
+                      ),
+                      const Expanded(child: TransactionHistoryView()),
+                    ],
+                  ),
                   // Menu Tab
                   const Center(child: Text('Menu')),
                 ],
@@ -177,10 +343,9 @@ class _MobileDashboardPageState extends ConsumerState<MobileDashboardPage> {
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
                     _buildNavItem(Icons.format_list_bulleted, 'Watchlist', 0),
-                    _buildNavItem(Icons.show_chart, 'Charts', 1),
                     _buildNavItem(Icons.swap_horiz, 'Trade', 2),
-                    _buildNavItem(Icons.history, 'History', 3),
-                    _buildNavItem(Icons.menu, 'Menu', 4),
+                    _buildNavItem(Icons.money_rounded, 'P&L', 3),
+                    _buildNavItem(Icons.history, 'Transactions', 4),
                   ],
                 ),
               ),
@@ -192,9 +357,15 @@ class _MobileDashboardPageState extends ConsumerState<MobileDashboardPage> {
   }
 
   Widget _buildNavItem(IconData icon, String label, int index) {
-    final isSelected = _selectedIndex == index;
+    // Adjust the index for the navigation after removing Charts tab
+    int adjustedIndex = index;
+    if (index > 1) {
+      adjustedIndex = index - 1;
+    }
+
+    final isSelected = _selectedIndex == adjustedIndex;
     return GestureDetector(
-      onTap: () => setState(() => _selectedIndex = index),
+      onTap: () => setState(() => _selectedIndex = adjustedIndex),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

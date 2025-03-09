@@ -38,96 +38,139 @@ class KlineChart extends ConsumerWidget {
     }
 
     final selectedKLineType = ref.watch(selectedKLineTypeProvider);
+    final isMobile = MediaQuery.of(context).size.width < 768;
+
+    Widget buildKLineTypeButtons() {
+      if (isMobile) {
+        return Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 8,
+          runSpacing: 8,
+          children: KLineType.values
+              .where((type) => !type.isCryptoOnly || marketType == 'crypto')
+              .map((type) => ChoiceChip(
+                    label: Text(type.label),
+                    selected: selectedKLineType == type,
+                    onSelected: (selected) {
+                      if (selected) {
+                        ref.read(selectedKLineTypeProvider.notifier).state =
+                            type;
+                      }
+                    },
+                  ))
+              .toList(),
+        );
+      }
+
+      // Desktop view - vertical layout
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: KLineType.values
+            .where((type) => !type.isCryptoOnly || marketType == 'crypto')
+            .map((type) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4.0),
+                  child: ChoiceChip(
+                    label: Text(type.label),
+                    selected: selectedKLineType == type,
+                    onSelected: (selected) {
+                      if (selected) {
+                        ref.read(selectedKLineTypeProvider.notifier).state =
+                            type;
+                      }
+                    },
+                  ),
+                ))
+            .toList(),
+      );
+    }
+
+    Widget buildChart() {
+      return SfCartesianChart(
+        title: ChartTitle(text: _getChartTitle(marketType)),
+        plotAreaBorderWidth: 0,
+        enableAxisAnimation: false,
+        primaryXAxis: DateTimeAxis(
+          majorGridLines: const MajorGridLines(width: 0),
+          dateFormat: _getDateFormat(selectedKLineType),
+          intervalType: _getIntervalType(selectedKLineType),
+          interval: _getInterval(selectedKLineType),
+          autoScrollingDelta: _getScrollingDelta(selectedKLineType),
+          autoScrollingMode: AutoScrollingMode.end,
+        ),
+        primaryYAxis: NumericAxis(
+          majorGridLines: const MajorGridLines(width: 0.5, color: Colors.grey),
+          axisLine: const AxisLine(width: 0),
+          numberFormat: NumberFormat.currency(
+              symbol: '\$', decimalDigits: marketType == 'forex' ? 4 : 2),
+          minimum: null,
+          maximum: null,
+          rangePadding: ChartRangePadding.additional,
+        ),
+        series: <CandleSeries<KlineData, DateTime>>[
+          CandleSeries<KlineData, DateTime>(
+            dataSource: klineData,
+            xValueMapper: (KlineData data, _) =>
+                DateTime.fromMillisecondsSinceEpoch(data.timestamp),
+            lowValueMapper: (KlineData data, _) => data.low,
+            highValueMapper: (KlineData data, _) => data.high,
+            openValueMapper: (KlineData data, _) => data.open,
+            closeValueMapper: (KlineData data, _) => data.close,
+            bearColor: Colors.red,
+            bullColor: Colors.green,
+            enableTooltip: true,
+            animationDuration: 0,
+          ),
+        ],
+        zoomPanBehavior: ZoomPanBehavior(
+          enablePanning: true,
+          enablePinching: true,
+          enableDoubleTapZooming: true,
+          enableMouseWheelZooming: true,
+          enableSelectionZooming: true,
+          zoomMode: ZoomMode.x,
+        ),
+        crosshairBehavior: CrosshairBehavior(
+          enable: true,
+          activationMode: ActivationMode.singleTap,
+        ),
+        trackballBehavior: TrackballBehavior(
+          enable: true,
+          tooltipDisplayMode: TrackballDisplayMode.groupAllPoints,
+          tooltipAlignment: ChartAlignment.center,
+          lineType: TrackballLineType.vertical,
+          shouldAlwaysShow: true,
+          markerSettings: const TrackballMarkerSettings(
+            markerVisibility: TrackballVisibilityMode.visible,
+            height: 10,
+            width: 10,
+            borderWidth: 1,
+          ),
+        ),
+      );
+    }
+
+    if (isMobile) {
+      return Column(
+        children: [
+          Expanded(child: buildChart()),
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: buildKLineTypeButtons(),
+          ),
+        ],
+      );
+    }
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Expanded(
-          child: SfCartesianChart(
-            title: ChartTitle(text: _getChartTitle(marketType)),
-            plotAreaBorderWidth: 0,
-            enableAxisAnimation: false,
-            primaryXAxis: DateTimeAxis(
-              majorGridLines: const MajorGridLines(width: 0),
-              dateFormat: _getDateFormat(selectedKLineType),
-              intervalType: _getIntervalType(selectedKLineType),
-              interval: _getInterval(selectedKLineType),
-              autoScrollingDelta: _getScrollingDelta(selectedKLineType),
-              autoScrollingMode: AutoScrollingMode.end,
-            ),
-            primaryYAxis: NumericAxis(
-              majorGridLines:
-                  const MajorGridLines(width: 0.5, color: Colors.grey),
-              axisLine: const AxisLine(width: 0),
-              numberFormat: NumberFormat.currency(
-                  symbol: '\$', decimalDigits: marketType == 'forex' ? 4 : 2),
-              minimum: null,
-              maximum: null,
-              rangePadding: ChartRangePadding.additional,
-            ),
-            series: <CandleSeries<KlineData, DateTime>>[
-              CandleSeries<KlineData, DateTime>(
-                dataSource: klineData,
-                xValueMapper: (KlineData data, _) =>
-                    DateTime.fromMillisecondsSinceEpoch(data.timestamp),
-                lowValueMapper: (KlineData data, _) => data.low,
-                highValueMapper: (KlineData data, _) => data.high,
-                openValueMapper: (KlineData data, _) => data.open,
-                closeValueMapper: (KlineData data, _) => data.close,
-                bearColor: Colors.red,
-                bullColor: Colors.green,
-                enableTooltip: true,
-                animationDuration: 0,
-              ),
-            ],
-            zoomPanBehavior: ZoomPanBehavior(
-              enablePanning: true,
-              enablePinching: true,
-              enableDoubleTapZooming: true,
-              enableMouseWheelZooming: true,
-              enableSelectionZooming: true,
-              zoomMode: ZoomMode.x,
-            ),
-            crosshairBehavior: CrosshairBehavior(
-              enable: true,
-              activationMode: ActivationMode.singleTap,
-            ),
-            trackballBehavior: TrackballBehavior(
-              enable: true,
-              tooltipDisplayMode: TrackballDisplayMode.groupAllPoints,
-              tooltipAlignment: ChartAlignment.center,
-              lineType: TrackballLineType.vertical,
-              shouldAlwaysShow: true,
-              markerSettings: const TrackballMarkerSettings(
-                markerVisibility: TrackballVisibilityMode.visible,
-                height: 10,
-                width: 10,
-                borderWidth: 1,
-              ),
-            ),
-          ),
-        ),
+        Expanded(child: buildChart()),
         Padding(
           padding: const EdgeInsets.all(8.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: KLineType.values
-                .where((type) => !type.isCryptoOnly || marketType == 'crypto')
-                .map((type) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4.0),
-                      child: ChoiceChip(
-                        label: Text(type.label),
-                        selected: selectedKLineType == type,
-                        onSelected: (selected) {
-                          if (selected) {
-                            ref.read(selectedKLineTypeProvider.notifier).state =
-                                type;
-                          }
-                        },
-                      ),
-                    ))
-                .toList(),
+            children: [buildKLineTypeButtons()],
           ),
         ),
       ],

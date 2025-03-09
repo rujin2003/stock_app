@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:stock_app/pages/auth_page.dart';
 import 'package:stock_app/providers/auth_state_provider.dart';
 import 'package:stock_app/providers/auth_provider.dart';
 
@@ -82,6 +83,17 @@ class AccountPage extends ConsumerWidget {
                             await ref
                                 .read(authStateNotifierProvider.notifier)
                                 .signOut();
+
+                            // Navigate to auth page after logout
+                            if (context.mounted) {
+                              Navigator.pushAndRemoveUntil(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const AuthPage(),
+                                ),
+                                (route) => false,
+                              );
+                            }
                           }
                         },
                         child: const Text(

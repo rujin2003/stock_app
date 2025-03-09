@@ -6,7 +6,12 @@ import '../providers/selected_stock_provider.dart';
 import '../models/stock_item.dart';
 
 class WatchlistView extends ConsumerWidget {
-  const WatchlistView({super.key});
+  final VoidCallback onStockSelected;
+
+  const WatchlistView({
+    super.key,
+    required this.onStockSelected,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -68,6 +73,7 @@ class WatchlistView extends ConsumerWidget {
                       symbol: item.symbol,
                       marketType: item.type,
                       isMobile: isMobile,
+                      onStockSelected: onStockSelected,
                     );
                   },
                 ),
@@ -104,12 +110,14 @@ class StockListTile extends ConsumerWidget {
   final String symbol;
   final String marketType;
   final bool isMobile;
+  final VoidCallback onStockSelected;
 
   const StockListTile({
     super.key,
     required this.symbol,
     required this.marketType,
     required this.isMobile,
+    required this.onStockSelected,
   });
 
   @override
@@ -246,6 +254,7 @@ class StockListTile extends ConsumerWidget {
               exchange: '',
             );
             ref.read(selectedStockProvider.notifier).selectStock(stockItem);
+            onStockSelected();
           },
         ),
       );

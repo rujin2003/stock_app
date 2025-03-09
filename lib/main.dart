@@ -3,7 +3,6 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stock_app/app.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'services/notification_service.dart';
 import 'providers/notification_provider.dart';
 import 'models/notification.dart';
 
@@ -19,13 +18,52 @@ class NotificationObserver extends ProviderObserver {
     if (provider == notificationStreamProvider &&
         newValue is AsyncData<AppNotification>) {
       final notification = newValue.value;
-      if (notification != null) {
-        // This will be called when a new notification is received
-        // We'll handle this in the app widget
-      }
+      // Show local notification
+      _showLocalNotification(notification, container);
+    }
+  }
+
+  void _showLocalNotification(
+      AppNotification notification, ProviderContainer container) {
+    // Get the messenger key from the app widget
+    final messenger = container.read(scaffoldMessengerKeyProvider).currentState;
+    if (messenger != null) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                notification.title,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Text(notification.message),
+            ],
+          ),
+          action: SnackBarAction(
+            label: 'View',
+            onPressed: () {
+              // Get the navigator key from the app widget
+              final navigator =
+                  container.read(navigatorKeyProvider).currentState;
+              if (navigator != null) {
+                navigator.pushNamed('/notifications');
+              }
+            },
+          ),
+          duration: const Duration(seconds: 5),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 }
+
+// Global keys provider for navigation and scaffold messenger
+final navigatorKeyProvider = Provider((ref) => GlobalKey<NavigatorState>());
+final scaffoldMessengerKeyProvider =
+    Provider((ref) => GlobalKey<ScaffoldMessengerState>());
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
