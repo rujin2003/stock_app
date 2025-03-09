@@ -111,9 +111,6 @@ class StockWSService {
 
   void _onData(dynamic data) {
     try {
-      // Log all incoming messages
-      log('WebSocket received: $data');
-
       final jsonData = jsonDecode(data as String);
 
       // Handle authentication response

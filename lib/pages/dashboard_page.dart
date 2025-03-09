@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:stock_app/components/search_view.dart';
-import 'package:stock_app/components/watchlist_view.dart';
-import 'package:stock_app/components/kline_chart.dart';
-import 'package:stock_app/components/stock_trading_view.dart';
-import 'package:stock_app/providers/stock_kline_provider.dart';
-import 'package:stock_app/providers/selected_stock_provider.dart';
-import 'package:stock_app/pages/mobile_dashboard_page.dart';
+import '../components/search_view.dart';
+import '../components/watchlist_view.dart';
+import '../components/kline_chart.dart';
+import '../components/stock_trading_view.dart';
+import '../components/transaction_history_view.dart';
+import '../components/pnl_summary_view.dart';
+import '../components/notification_bell.dart';
+import '../pages/account_page.dart';
+import '../providers/stock_kline_provider.dart';
+import '../providers/selected_stock_provider.dart';
+import '../providers/stock_quote_provider.dart';
+import '../providers/price_update_provider.dart';
+import '../pages/mobile_dashboard_page.dart';
 
 class DashboardPage extends ConsumerWidget {
   const DashboardPage({super.key});
@@ -23,6 +29,10 @@ class DashboardPage extends ConsumerWidget {
 
     // Desktop view
     final selectedStock = ref.watch(selectedStockProvider);
+    final stockQuoteAsync = selectedStock != null
+        ? ref.watch(
+            stockQuoteProvider((selectedStock.symbol, selectedStock.type)))
+        : null;
 
     return Scaffold(
       body: Container(
@@ -38,7 +48,7 @@ class DashboardPage extends ConsumerWidget {
           padding: const EdgeInsets.all(24.0),
           child: Column(
             children: [
-              TopBar(),
+              const TopBar(),
               const SizedBox(height: 16),
               Expanded(
                 child: Row(
@@ -48,7 +58,26 @@ class DashboardPage extends ConsumerWidget {
                       width: MediaQuery.of(context).size.width * 0.3,
                       child: Column(
                         children: [
-                          const StockTradingView(),
+                          if (selectedStock != null && stockQuoteAsync != null)
+                            stockQuoteAsync.when(
+                              data: (quote) => StockTradingView(
+                                stock: selectedStock.toStock(),
+                                price: quote.price,
+                              ),
+                              loading: () => const Center(
+                                child: CircularProgressIndicator(),
+                              ),
+                              error: (error, stackTrace) => Center(
+                                child: Text('Error: $error'),
+                              ),
+                            )
+                          else
+                            const Center(
+                              child: Text('Select a stock to trade'),
+                            ),
+                          const SizedBox(height: 16),
+                          const PnLSummaryView(),
+                          const SizedBox(height: 16),
                           Expanded(
                             child: Container(
                               padding: const EdgeInsets.all(12),
@@ -73,28 +102,39 @@ class DashboardPage extends ConsumerWidget {
                     ),
                     const SizedBox(width: 16),
                     Expanded(
-                      child: selectedStock != null
-                          ? ref
-                              .watch(stockKlineStreamProvider(
-                                  (selectedStock.symbol, selectedStock.type)))
-                              .when(
-                                data: (klineData) => KlineChart(
-                                  klineData: klineData,
-                                  symbol: selectedStock.symbol,
-                                  marketType: selectedStock.type,
-                                ),
-                                loading: () => const Center(
-                                    child: CircularProgressIndicator()),
-                                error: (error, stackTrace) =>
-                                    Center(child: Text('Error: $error')),
-                              )
-                          : const Center(
-                              child: Text('Select a stock to view chart'),
+                      child: Column(
+                        children: [
+                          if (selectedStock != null)
+                            Expanded(
+                              flex: 2,
+                              child: ref
+                                  .watch(stockKlineStreamProvider((
+                                    selectedStock.symbol,
+                                    selectedStock.type
+                                  )))
+                                  .when(
+                                    data: (klineData) => KlineChart(
+                                      klineData: klineData,
+                                      symbol: selectedStock.symbol,
+                                      marketType: selectedStock.type,
+                                    ),
+                                    loading: () => const Center(
+                                        child: CircularProgressIndicator()),
+                                    error: (error, stackTrace) =>
+                                        Center(child: Text('Error: $error')),
+                                  ),
                             ),
+                          const SizedBox(height: 16),
+                          const Expanded(
+                            flex: 1,
+                            child: TransactionHistoryView(),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
-              )
+              ),
             ],
           ),
         ),
@@ -165,25 +205,66 @@ class TopBar extends StatelessWidget {
               ],
             ),
             const VerticalDivider(),
-            Row(
-              children: const [
-                Icon(Icons.notification_add),
-                SizedBox(width: 8),
-                Text("Alert"),
-              ],
+            Consumer(
+              builder: (context, ref, child) {
+                final selectedStock = ref.watch(selectedStockProvider);
+
+                return Row(
+                  children: [
+                    const Icon(Icons.notification_add),
+                    const SizedBox(width: 8),
+                    const Text("Alert"),
+                    if (selectedStock != null) ...[
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.refresh),
+                        tooltip: 'Process Orders',
+                        onPressed: () async {
+                          final updatePrice = ref
+                              .read(priceUpdateProvider(selectedStock.symbol));
+                          await updatePrice();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Orders processed'),
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ],
+                );
+              },
             ),
             const Spacer(),
             IconButton(
-              onPressed: () {},
-              icon: const Icon(
-                Icons.notifications,
-              ),
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (context) => Dialog(
+                    backgroundColor: Colors.transparent,
+                    child: Container(
+                      constraints: BoxConstraints(
+                        maxWidth: MediaQuery.of(context).size.width * 0.8,
+                        maxHeight: MediaQuery.of(context).size.height * 0.8,
+                      ),
+                      child: const TransactionHistoryView(),
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.history),
+              tooltip: 'Transaction History',
             ),
+            const NotificationBell(),
             IconButton(
-              onPressed: () {},
-              icon: const Icon(
-                Icons.person,
-              ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const AccountPage()),
+                );
+              },
+              icon: const Icon(Icons.person),
             ),
           ],
         ),

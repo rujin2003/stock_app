@@ -1,6 +1,7 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../models/transaction.dart';
 import '../models/holding.dart';
+import '../models/order_type.dart';
 import '../services/trading_service.dart';
 import 'auth_provider.dart';
 import 'balance_provider.dart';
@@ -55,7 +56,10 @@ class CreateTransaction extends _$CreateTransaction {
   Future<void> execute({
     required String symbol,
     required String type,
+    required OrderType orderType,
     required double price,
+    double? limitPrice,
+    double? stopPrice,
     required int units,
     double leverage = 1.0,
   }) async {
@@ -67,7 +71,10 @@ class CreateTransaction extends _$CreateTransaction {
       userId: user.id,
       symbol: symbol,
       type: type,
+      orderType: orderType,
       price: price,
+      limitPrice: limitPrice,
+      stopPrice: stopPrice,
       units: units,
       leverage: leverage,
     );

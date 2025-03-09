@@ -1,3 +1,5 @@
+import 'stock.dart';
+
 class StockItem {
   final String symbol; // "c" in the API
   final String name; // "n" in the API
@@ -17,6 +19,27 @@ class StockItem {
       name: json['n'] ?? '',
       type: json['t'] ?? '',
       exchange: json['e'] ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'symbol': symbol,
+      'name': name,
+      'type': type,
+      'exchange': exchange,
+    };
+  }
+
+  // Convert StockItem to Stock
+  Stock toStock() {
+    return Stock(
+      symbol: symbol,
+      name: name,
+      type: type,
+      currency: 'USD', // Default currency
+      exchange: exchange,
+      country: 'US', // Default country
     );
   }
 }

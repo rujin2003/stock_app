@@ -33,17 +33,31 @@ class StockService {
       );
 
       if (response.statusCode == 200) {
-        final Map<String, dynamic> data = json.decode(response.body);
-        if (data['status'] == 'ok' && data['data'] is List) {
-          return (data['data'] as List)
-              .map((item) => StockItem.fromJson(item))
-              .toList();
-        } else {
-          log('API returned an error status: ${data['status']}');
+        try {
+          final Map<String, dynamic> data = json.decode(response.body);
+          if (data['status'] == 'ok' && data['data'] is List) {
+            try {
+              return (data['data'] as List)
+                  .map((item) => StockItem.fromJson(item))
+                  .toList();
+            } catch (e) {
+              log('Error parsing stock items: $e');
+              log('Data structure: ${data['data']}');
+              return [];
+            }
+          } else {
+            log('API returned an error status: ${data['status']}');
+            log('API response: ${response.body}');
+            return [];
+          }
+        } catch (e) {
+          log('Error decoding JSON response: $e');
+          log('Response body: ${response.body}');
           return [];
         }
       } else {
-        log('API request failed with status code: ${response.statusCode}'); // Log the status code
+        log('API request failed with status code: ${response.statusCode}');
+        log('API response: ${response.body}');
         return [];
       }
 
