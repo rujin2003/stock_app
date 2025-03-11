@@ -5,7 +5,6 @@ import '../widgets/trade_buttons.dart';
 import '../providers/chart_provider.dart';
 import '../providers/market_data_provider.dart';
 import '../providers/market_watcher_provider.dart';
-import '../models/symbol.dart';
 
 class ChartsPage extends ConsumerWidget {
   const ChartsPage({super.key});

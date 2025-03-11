@@ -58,7 +58,7 @@ final totalProfitLossProvider = Provider<AsyncValue<double>>((ref) {
 });
 
 class HistoryPage extends ConsumerStatefulWidget {
-  const HistoryPage({Key? key}) : super(key: key);
+  const HistoryPage({super.key});
 
   @override
   ConsumerState<HistoryPage> createState() => _HistoryPageState();
@@ -149,8 +149,6 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
 
     // Get account balance
     final accountBalanceAsync = ref.watch(accountBalanceProvider);
-    // Get total P&L for all open positions (like in trade_page.dart)
-    final totalProfitLossAsync = ref.watch(totalProfitLossProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -693,11 +691,6 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
 
   Widget _buildTransactionItem(BuildContext context, Transaction transaction) {
     final theme = Theme.of(context);
-    final isMobile = ResponsiveLayout.isMobile(context);
-
-    // Format date
-    final dateFormat = DateFormat('yyyy.MM.dd HH:mm:ss');
-    final date = dateFormat.format(transaction.createdAt);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 4),
@@ -755,12 +748,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      (transaction.type == TransactionType.deposit ||
-                                  transaction.type == TransactionType.profit ||
-                                  transaction.type == TransactionType.credit
-                              ? '+'
-                              : '-') +
-                          '\$${transaction.amount.toStringAsFixed(2)}',
+                      '${transaction.type == TransactionType.deposit || transaction.type == TransactionType.profit || transaction.type == TransactionType.credit ? '+' : '-'}\$${transaction.amount.toStringAsFixed(2)}',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         color: transaction.getColor(context),
@@ -824,13 +812,6 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
 
   Widget _buildClosedTradeItem(BuildContext context, Trade trade) {
     final theme = Theme.of(context);
-    final isMobile = ResponsiveLayout.isMobile(context);
-
-    // Format dates
-    final dateFormat = DateFormat('yyyy.MM.dd HH:mm:ss');
-    final openDate = dateFormat.format(trade.openTime);
-    final closeDate =
-        trade.closeTime != null ? dateFormat.format(trade.closeTime!) : '—';
 
     // Calculate profit/loss
     final isProfitable = trade.profit != null ? trade.profit! >= 0 : false;

@@ -39,7 +39,7 @@ class TradeForm {
 
   TradeForm({
     this.volume = 0.01,
-    this.leverage = 25.0,
+    this.leverage = 500.0,
     this.orderType = OrderType.market,
     this.limitPrice,
     this.stopPrice,
@@ -156,4 +156,21 @@ class CreateTradeParams {
     required this.type,
     required this.currentPrice,
   });
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is CreateTradeParams &&
+        other.symbolCode == symbolCode &&
+        other.symbolName == symbolName &&
+        other.type == type &&
+        other.currentPrice == currentPrice;
+  }
+
+  @override
+  int get hashCode =>
+      symbolCode.hashCode ^
+      symbolName.hashCode ^
+      type.hashCode ^
+      currentPrice.hashCode;
 }

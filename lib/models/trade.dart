@@ -1,5 +1,3 @@
-import 'package:flutter/material.dart';
-
 enum TradeType {
   buy,
   sell,

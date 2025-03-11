@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/symbol.dart';
 import '../models/trade.dart';
 import '../providers/trade_provider.dart';
-import '../providers/market_data_provider.dart';
 import '../widgets/responsive_layout.dart';
 
 class TradeButtons extends ConsumerStatefulWidget {
@@ -12,10 +11,10 @@ class TradeButtons extends ConsumerStatefulWidget {
   final double currentPrice;
 
   const TradeButtons({
-    Key? key,
+    super.key,
     required this.symbol,
     required this.currentPrice,
-  }) : super(key: key);
+  });
 
   @override
   ConsumerState<TradeButtons> createState() => _TradeButtonsState();
@@ -131,28 +130,16 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
     super.dispose();
   }
 
-  void _debugPrintAllControllers(String location) {
-    print('=== DEBUG CONTROLLERS at $location ===');
-    print('Stop Loss: "${_stopLossController.text}"');
-    print('Take Profit: "${_takeProfitController.text}"');
-    print('Volume: "${_volumeController.text}"');
-    print('Limit Price: "${_limitPriceController.text}"');
-    print('Stop Price: "${_stopPriceController.text}"');
-    print('Trailing Stop: "${_trailingStopController.text}"');
-    print('=======================================');
-  }
-
   @override
   Widget build(BuildContext context) {
-    _debugPrintAllControllers('build method');
     final theme = Theme.of(context);
     final isMobile = ResponsiveLayout.isMobile(context);
     final form = ref.watch(tradeFormProvider);
 
     // Set constant leverage of 25%
-    if (form.leverage != 25) {
+    if (form.leverage != 500) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        ref.read(tradeFormProvider.notifier).setLeverage(25);
+        ref.read(tradeFormProvider.notifier).setLeverage(500);
       });
     }
 
@@ -316,125 +303,44 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
                   ],
 
                   // Volume (lot size)
-                  Row(
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Volume:', style: theme.textTheme.bodyMedium),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey.shade300),
+                      Text(
+                        'Volume *',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      TextField(
+                        controller: _volumeController,
+                        focusNode: _volumeFocus,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(
+                              RegExp(r'^\d*\.?\d*')),
+                        ],
+                        decoration: InputDecoration(
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
+                          border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(4),
                           ),
-                          child: Row(
-                            children: [
-                              // Decrement button
-                              InkWell(
-                                onTap: () {
-                                  final newVolume =
-                                      (form.volume - 0.01).clamp(0.01, 1.0);
-                                  ref
-                                      .read(tradeFormProvider.notifier)
-                                      .setVolume(newVolume);
-                                },
-                                child: Container(
-                                  width: 32,
-                                  height: 32,
-                                  alignment: Alignment.center,
-                                  decoration: BoxDecoration(
-                                    border: Border(
-                                      right: BorderSide(
-                                          color: Colors.grey.shade300),
-                                    ),
-                                  ),
-                                  child: const Icon(Icons.remove, size: 16),
-                                ),
-                              ),
-                              // Volume text field
-                              Expanded(
-                                child: TextField(
-                                  controller: _volumeController,
-                                  focusNode: _volumeFocus,
-                                  textAlign: TextAlign.center,
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                          decimal: true),
-                                  inputFormatters: [
-                                    FilteringTextInputFormatter.allow(
-                                        RegExp(r'^\d*\.?\d*')),
-                                  ],
-                                  decoration: const InputDecoration(
-                                    isDense: true,
-                                    contentPadding:
-                                        EdgeInsets.symmetric(vertical: 8),
-                                    border: InputBorder.none,
-                                  ),
-                                  style: theme.textTheme.bodyMedium,
-                                  onChanged: (value) {
-                                    if (value.isEmpty) return;
-
-                                    final volume = double.tryParse(value);
-                                    if (volume == null) return;
-
-                                    final clampedVolume =
-                                        volume.clamp(0.01, 1.0);
-                                    ref
-                                        .read(tradeFormProvider.notifier)
-                                        .setVolume(clampedVolume);
-
-                                    // Only update text if value was clamped and different
-                                    if (volume != clampedVolume &&
-                                        _volumeController.text !=
-                                            clampedVolume.toStringAsFixed(2)) {
-                                      // Remember cursor position
-                                      final cursorPos = _volumeController
-                                          .selection.baseOffset;
-
-                                      // Update text without triggering another onChanged
-                                      WidgetsBinding.instance
-                                          .addPostFrameCallback((_) {
-                                        if (_volumeFocus.hasFocus) {
-                                          final newText =
-                                              clampedVolume.toStringAsFixed(2);
-                                          _volumeController.value =
-                                              TextEditingValue(
-                                            text: newText,
-                                            selection: TextSelection.collapsed(
-                                              offset: cursorPos.clamp(
-                                                  0, newText.length),
-                                            ),
-                                          );
-                                        }
-                                      });
-                                    }
-                                  },
-                                ),
-                              ),
-                              // Increment button
-                              InkWell(
-                                onTap: () {
-                                  final newVolume =
-                                      (form.volume + 0.01).clamp(0.01, 1.0);
-                                  ref
-                                      .read(tradeFormProvider.notifier)
-                                      .setVolume(newVolume);
-                                },
-                                child: Container(
-                                  width: 32,
-                                  height: 32,
-                                  alignment: Alignment.center,
-                                  decoration: BoxDecoration(
-                                    border: Border(
-                                      left: BorderSide(
-                                          color: Colors.grey.shade300),
-                                    ),
-                                  ),
-                                  child: const Icon(Icons.add, size: 16),
-                                ),
-                              ),
-                            ],
-                          ),
+                          hintText: 'Required',
                         ),
+                        style: theme.textTheme.bodyMedium,
+                        onChanged: (value) {
+                          final volume = double.tryParse(value);
+                          // Set a minimal volume if empty or invalid
+                          ref
+                              .read(tradeFormProvider.notifier)
+                              .setVolume(volume ?? 0.01);
+                        },
                       ),
                     ],
                   ),
