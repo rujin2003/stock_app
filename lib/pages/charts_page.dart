@@ -45,9 +45,16 @@ class ChartsPage extends ConsumerWidget {
               loading: () => const SizedBox(
                   height: 80,
                   child: Center(child: CircularProgressIndicator())),
-              error: (_, __) => const SizedBox(
-                  height: 80,
-                  child: Center(child: Text('Error loading market data'))),
+              error: (error, stack) => SizedBox(
+                height: 80,
+                child: Center(
+                  child: Text(
+                    'Error loading market data',
+                    style:
+                        TextStyle(color: Theme.of(context).colorScheme.error),
+                  ),
+                ),
+              ),
             ),
 
             // Chart section

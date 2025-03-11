@@ -12,6 +12,13 @@ enum MarketType {
   crypto,
 }
 
+enum ConnectionState {
+  disconnected,
+  connecting,
+  authenticating,
+  authenticated,
+}
+
 class WebSocketService {
   static final WebSocketService _instance = WebSocketService._internal();
   factory WebSocketService() => _instance;
@@ -25,7 +32,12 @@ class WebSocketService {
   };
 
   final Map<MarketType, WebSocketChannel?> _channels = {};
+  final Map<MarketType, ConnectionState> _connectionStates = {};
   final Map<String, StreamController<MarketData>> _symbolStreamControllers = {};
+  final Map<String, Completer<void>> _pendingSubscriptions = {};
+
+  // Queue of symbols waiting for authentication to complete
+  final Map<MarketType, List<String>> _pendingSymbols = {};
 
   String? _authToken;
 
@@ -34,17 +46,28 @@ class WebSocketService {
     if (_authToken == null) {
       debugPrint('Error: ITICK_API_KEY not found in environment variables');
     }
+
+    // Initialize connection states
+    for (var type in MarketType.values) {
+      _connectionStates[type] = ConnectionState.disconnected;
+      _pendingSymbols[type] = [];
+    }
   }
 
   Future<void> connectToMarket(MarketType marketType) async {
-    if (_channels[marketType] != null) {
-      // Already connected
+    if (_channels[marketType] != null &&
+        _connectionStates[marketType] != ConnectionState.disconnected) {
+      // Already connected or connecting
       return;
     }
+
+    // Update connection state
+    _connectionStates[marketType] = ConnectionState.connecting;
 
     final wsUrl = _wsUrls[marketType];
     if (wsUrl == null) {
       debugPrint('Error: Invalid market type');
+      _connectionStates[marketType] = ConnectionState.disconnected;
       return;
     }
 
@@ -59,10 +82,12 @@ class WebSocketService {
         },
         onError: (error) {
           debugPrint('WebSocket error: $error');
+          _connectionStates[marketType] = ConnectionState.disconnected;
           _reconnect(marketType);
         },
         onDone: () {
           debugPrint('WebSocket connection closed');
+          _connectionStates[marketType] = ConnectionState.disconnected;
           _reconnect(marketType);
         },
       );
@@ -71,6 +96,7 @@ class WebSocketService {
       _authenticate(marketType);
     } catch (e) {
       debugPrint('Error connecting to WebSocket: $e');
+      _connectionStates[marketType] = ConnectionState.disconnected;
       _reconnect(marketType);
     }
   }
@@ -84,6 +110,9 @@ class WebSocketService {
     final channel = _channels[marketType];
     if (channel == null) return;
 
+    // Update connection state
+    _connectionStates[marketType] = ConnectionState.authenticating;
+
     final authMessage = {
       'ac': 'auth',
       'params': _authToken,
@@ -92,15 +121,32 @@ class WebSocketService {
     channel.sink.add(jsonEncode(authMessage));
   }
 
-  void subscribeToSymbol(String symbol, MarketType marketType) {
-    final channel = _channels[marketType];
-    if (channel == null) {
-      connectToMarket(marketType).then((_) {
-        _subscribeToSymbol(symbol, marketType);
-      });
-    } else {
-      _subscribeToSymbol(symbol, marketType);
+  Future<void> subscribeToSymbol(String symbol, MarketType marketType) async {
+    // Create a stream controller for this symbol if it doesn't exist
+    if (!_symbolStreamControllers.containsKey(symbol)) {
+      _symbolStreamControllers[symbol] =
+          StreamController<MarketData>.broadcast();
     }
+
+    // Check connection state
+    final connectionState =
+        _connectionStates[marketType] ?? ConnectionState.disconnected;
+
+    if (connectionState == ConnectionState.disconnected) {
+      // Connect first
+      await connectToMarket(marketType);
+      // Add to pending symbols
+      _pendingSymbols[marketType]?.add(symbol);
+      return;
+    } else if (connectionState == ConnectionState.connecting ||
+        connectionState == ConnectionState.authenticating) {
+      // Add to pending symbols
+      _pendingSymbols[marketType]?.add(symbol);
+      return;
+    }
+
+    // If we're authenticated, subscribe immediately
+    _subscribeToSymbol(symbol, marketType);
   }
 
   void _subscribeToSymbol(String symbol, MarketType marketType) {
@@ -115,10 +161,9 @@ class WebSocketService {
 
     channel.sink.add(jsonEncode(subscribeMessage));
 
-    // Create a stream controller for this symbol if it doesn't exist
-    if (!_symbolStreamControllers.containsKey(symbol)) {
-      _symbolStreamControllers[symbol] =
-          StreamController<MarketData>.broadcast();
+    // Create a completer for this subscription if it doesn't exist
+    if (!_pendingSubscriptions.containsKey(symbol)) {
+      _pendingSubscriptions[symbol] = Completer<void>();
     }
   }
 
@@ -142,19 +187,42 @@ class WebSocketService {
       // Handle authentication response
       if (data['resAc'] == 'auth') {
         if (data['code'] == 1) {
-          debugPrint('Authentication successful');
+          debugPrint('Authentication successful for ${marketType.toString()}');
+          _connectionStates[marketType] = ConnectionState.authenticated;
+
+          // Process any pending symbols
+          final pendingSymbols = _pendingSymbols[marketType] ?? [];
+          for (final symbol in pendingSymbols) {
+            _subscribeToSymbol(symbol, marketType);
+          }
+          _pendingSymbols[marketType]?.clear();
         } else {
           debugPrint('Authentication failed: ${data['msg']}');
+          _connectionStates[marketType] = ConnectionState.disconnected;
         }
         return;
       }
 
       // Handle subscription response
       if (data['resAc'] == 'subscribe') {
+        final symbol = data['params'] as String?;
         if (data['code'] == 1) {
           debugPrint('Subscription successful: ${data['msg']}');
+
+          // Complete the subscription completer
+          if (symbol != null && _pendingSubscriptions.containsKey(symbol)) {
+            _pendingSubscriptions[symbol]?.complete();
+            _pendingSubscriptions.remove(symbol);
+          }
         } else {
           debugPrint('Subscription failed: ${data['msg']}');
+
+          // Complete the subscription completer with an error
+          if (symbol != null && _pendingSubscriptions.containsKey(symbol)) {
+            _pendingSubscriptions[symbol]
+                ?.completeError('Subscription failed: ${data['msg']}');
+            _pendingSubscriptions.remove(symbol);
+          }
         }
         return;
       }
@@ -174,6 +242,11 @@ class WebSocketService {
   }
 
   Stream<MarketData>? getSymbolStream(String symbol) {
+    if (!_symbolStreamControllers.containsKey(symbol)) {
+      // Create a stream controller if it doesn't exist
+      _symbolStreamControllers[symbol] =
+          StreamController<MarketData>.broadcast();
+    }
     return _symbolStreamControllers[symbol]?.stream;
   }
 
@@ -198,6 +271,13 @@ class WebSocketService {
       controller.close();
     }
     _symbolStreamControllers.clear();
+
+    for (final completer in _pendingSubscriptions.values) {
+      if (!completer.isCompleted) {
+        completer.completeError('WebSocketService disposed');
+      }
+    }
+    _pendingSubscriptions.clear();
   }
 
   MarketType getMarketTypeForSymbol(String symbol) {
@@ -213,5 +293,9 @@ class WebSocketService {
     } else {
       return MarketType.stock;
     }
+  }
+
+  ConnectionState getConnectionState(MarketType marketType) {
+    return _connectionStates[marketType] ?? ConnectionState.disconnected;
   }
 }

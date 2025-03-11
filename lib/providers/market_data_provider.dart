@@ -13,13 +13,27 @@ final webSocketServiceProvider = Provider<WebSocketService>((ref) {
   return service;
 });
 
+// Provider for connection state by market type
+final connectionStateProvider =
+    Provider.family<ConnectionState, MarketType>((ref, marketType) {
+  final webSocketService = ref.watch(webSocketServiceProvider);
+  return webSocketService.getConnectionState(marketType);
+});
+
 // Provider for market data by symbol
 final marketDataProvider =
     StreamProvider.family<MarketData, String>((ref, symbol) {
   final webSocketService = ref.watch(webSocketServiceProvider);
   final marketType = webSocketService.getMarketTypeForSymbol(symbol);
 
-  // Subscribe to the symbol
+  // Check connection state
+  final connectionState = webSocketService.getConnectionState(marketType);
+  if (connectionState == ConnectionState.disconnected) {
+    // Trigger connection
+    webSocketService.connectToMarket(marketType);
+  }
+
+  // Subscribe to the symbol - this will handle connection state internally
   webSocketService.subscribeToSymbol(symbol, marketType);
 
   // Return the stream for this symbol
@@ -46,8 +60,13 @@ final watchlistMarketDataProvider =
       final marketDataMap = <String, AsyncValue<MarketData>>{};
 
       for (final symbol in watchlist) {
-        final marketData = ref.watch(marketDataProvider(symbol.code));
-        marketDataMap[symbol.code] = marketData;
+        try {
+          final marketData = ref.watch(marketDataProvider(symbol.code));
+          marketDataMap[symbol.code] = marketData;
+        } catch (e) {
+          // Handle errors gracefully
+          marketDataMap[symbol.code] = AsyncValue.error(e, StackTrace.current);
+        }
       }
 
       return marketDataMap;

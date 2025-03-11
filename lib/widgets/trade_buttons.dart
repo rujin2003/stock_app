@@ -25,11 +25,39 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
   bool _showTradeForm = false;
   TradeType _selectedTradeType = TradeType.buy;
 
+  // Text controllers for SL/TP fields
+  final TextEditingController _stopLossController = TextEditingController();
+  final TextEditingController _takeProfitController = TextEditingController();
+  final TextEditingController _volumeController = TextEditingController();
+
+  @override
+  void dispose() {
+    _stopLossController.dispose();
+    _takeProfitController.dispose();
+    _volumeController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isMobile = ResponsiveLayout.isMobile(context);
     final form = ref.watch(tradeFormProvider);
+
+    // Set constant leverage of 25%
+    if (form.leverage != 25) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(tradeFormProvider.notifier).setLeverage(25);
+      });
+    }
+
+    // Update volume controller if form value changes from elsewhere
+    if (_showTradeForm &&
+        _volumeController.text != form.volume.toStringAsFixed(2)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _volumeController.text = form.volume.toStringAsFixed(2);
+      });
+    }
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -99,56 +127,124 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
                       Text('Volume:', style: theme.textTheme.bodyMedium),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Slider(
-                          value: form.volume,
-                          min: 0.01,
-                          max: 1.0,
-                          divisions: 99,
-                          label: form.volume.toStringAsFixed(2),
-                          onChanged: (value) {
-                            ref
-                                .read(tradeFormProvider.notifier)
-                                .setVolume(value);
-                          },
-                        ),
-                      ),
-                      SizedBox(
-                        width: 50,
-                        child: Text(
-                          form.volume.toStringAsFixed(2),
-                          style: theme.textTheme.bodyMedium,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Row(
+                            children: [
+                              // Decrement button
+                              InkWell(
+                                onTap: () {
+                                  final newVolume =
+                                      (form.volume - 0.01).clamp(0.01, 1.0);
+                                  ref
+                                      .read(tradeFormProvider.notifier)
+                                      .setVolume(newVolume);
+                                },
+                                child: Container(
+                                  width: 32,
+                                  height: 32,
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    border: Border(
+                                      right: BorderSide(
+                                          color: Colors.grey.shade300),
+                                    ),
+                                  ),
+                                  child: const Icon(Icons.remove, size: 16),
+                                ),
+                              ),
+                              // Volume text field
+                              Expanded(
+                                child: TextField(
+                                  controller: _volumeController,
+                                  textAlign: TextAlign.center,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                          decimal: true),
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.allow(
+                                        RegExp(r'^\d*\.?\d*')),
+                                  ],
+                                  decoration: const InputDecoration(
+                                    isDense: true,
+                                    contentPadding:
+                                        EdgeInsets.symmetric(vertical: 8),
+                                    border: InputBorder.none,
+                                  ),
+                                  style: theme.textTheme.bodyMedium,
+                                  onChanged: (value) {
+                                    if (value.isNotEmpty) {
+                                      final volume = double.tryParse(value);
+                                      if (volume != null) {
+                                        final clampedVolume =
+                                            volume.clamp(0.01, 1.0);
+                                        ref
+                                            .read(tradeFormProvider.notifier)
+                                            .setVolume(clampedVolume);
+
+                                        // Update text if value was clamped
+                                        if (volume != clampedVolume) {
+                                          _volumeController.text =
+                                              clampedVolume.toStringAsFixed(2);
+                                          _volumeController.selection =
+                                              TextSelection.fromPosition(
+                                            TextPosition(
+                                                offset: _volumeController
+                                                    .text.length),
+                                          );
+                                        }
+                                      }
+                                    }
+                                  },
+                                ),
+                              ),
+                              // Increment button
+                              InkWell(
+                                onTap: () {
+                                  final newVolume =
+                                      (form.volume + 0.01).clamp(0.01, 1.0);
+                                  ref
+                                      .read(tradeFormProvider.notifier)
+                                      .setVolume(newVolume);
+                                },
+                                child: Container(
+                                  width: 32,
+                                  height: 32,
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    border: Border(
+                                      left: BorderSide(
+                                          color: Colors.grey.shade300),
+                                    ),
+                                  ),
+                                  child: const Icon(Icons.add, size: 16),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],
                   ),
 
-                  // Leverage
-                  Row(
-                    children: [
-                      Text('Leverage:', style: theme.textTheme.bodyMedium),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Slider(
-                          value: form.leverage,
-                          min: 1,
-                          max: 100,
-                          divisions: 99,
-                          label: '${form.leverage.toStringAsFixed(0)}x',
-                          onChanged: (value) {
-                            ref
-                                .read(tradeFormProvider.notifier)
-                                .setLeverage(value);
-                          },
+                  // Display fixed leverage info
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: Row(
+                      children: [
+                        Text('Leverage:', style: theme.textTheme.bodyMedium),
+                        const SizedBox(width: 8),
+                        Text(
+                          '25x (fixed)',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
-                      SizedBox(
-                        width: 50,
-                        child: Text(
-                          '${form.leverage.toStringAsFixed(0)}x',
-                          style: theme.textTheme.bodyMedium,
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
 
                   // Advanced options toggle
@@ -194,13 +290,14 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
                           child: _buildPriceField(
                             context,
                             'Stop Loss',
-                            form.stopLoss,
+                            _stopLossController,
                             (value) => ref
                                 .read(tradeFormProvider.notifier)
                                 .setStopLoss(value),
                             _selectedTradeType == TradeType.buy
                                 ? widget.currentPrice * 0.99
                                 : widget.currentPrice * 1.01,
+                            form.stopLoss,
                           ),
                         ),
                         const SizedBox(width: 16),
@@ -208,13 +305,14 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
                           child: _buildPriceField(
                             context,
                             'Take Profit',
-                            form.takeProfit,
+                            _takeProfitController,
                             (value) => ref
                                 .read(tradeFormProvider.notifier)
                                 .setTakeProfit(value),
                             _selectedTradeType == TradeType.buy
                                 ? widget.currentPrice * 1.01
                                 : widget.currentPrice * 0.99,
+                            form.takeProfit,
                           ),
                         ),
                       ],
@@ -278,6 +376,10 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
           _selectedTradeType = type;
           _showTradeForm = true;
         });
+
+        // Initialize volume controller with current value
+        final form = ref.read(tradeFormProvider);
+        _volumeController.text = form.volume.toStringAsFixed(2);
       },
       style: ElevatedButton.styleFrom(
         backgroundColor: color,
@@ -299,14 +401,17 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
   Widget _buildPriceField(
     BuildContext context,
     String label,
-    double? value,
+    TextEditingController controller,
     Function(double?) onChanged,
     double suggestedValue,
+    double? currentValue,
   ) {
     final theme = Theme.of(context);
-    final controller = TextEditingController(
-      text: value?.toStringAsFixed(2) ?? '',
-    );
+
+    // Update controller text if value changes from elsewhere
+    if (currentValue != null && controller.text.isEmpty) {
+      controller.text = currentValue.toStringAsFixed(2);
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -386,6 +491,11 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
         _showTradeForm = false;
       });
       ref.read(tradeFormProvider.notifier).reset();
+
+      // Clear text controllers
+      _stopLossController.clear();
+      _takeProfitController.clear();
+      _volumeController.clear();
 
       // Show success message
       ScaffoldMessenger.of(context).showSnackBar(

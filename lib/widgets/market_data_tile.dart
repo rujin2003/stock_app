@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -9,7 +11,13 @@ import '../services/chart_service.dart';
 import '../widgets/responsive_layout.dart';
 import '../layouts/mobile_layout.dart';
 
-class MarketDataTile extends ConsumerStatefulWidget {
+// Create a simple provider to track price changes
+final priceChangeProvider =
+    StateProvider.family<bool, String>((ref, _) => false);
+final priceDirectionProvider =
+    StateProvider.family<bool, String>((ref, _) => false);
+
+class MarketDataTile extends ConsumerWidget {
   final Symbol symbol;
 
   const MarketDataTile({
@@ -18,34 +26,50 @@ class MarketDataTile extends ConsumerStatefulWidget {
   }) : super(key: key);
 
   @override
-  ConsumerState<MarketDataTile> createState() => _MarketDataTileState();
-}
-
-class _MarketDataTileState extends ConsumerState<MarketDataTile> {
-  double? _previousPrice;
-  bool _isIncreasing = false;
-  bool _priceChanged = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final marketDataAsync = ref.watch(marketDataProvider(widget.symbol.code));
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
 
-    // Handle price change animation
-    marketDataAsync.whenData((marketData) {
-      if (_previousPrice != null && _previousPrice != marketData.lastPrice) {
-        _isIncreasing = marketData.lastPrice > _previousPrice!;
-        _priceChanged = true;
-        Future.delayed(const Duration(milliseconds: 1000), () {
-          if (mounted) {
-            setState(() {
-              _priceChanged = false;
+    // Watch the market data - use a try-catch to handle potential errors
+    AsyncValue<MarketData> marketDataAsyncValue;
+    try {
+      marketDataAsyncValue = ref.watch(marketDataProvider(symbol.code));
+    } catch (e) {
+      log('Error watching market data provider: $e');
+      // Return a placeholder if we can't even watch the provider
+      return _buildErrorPlaceholder(context, theme);
+    }
+
+    // Watch the price change indicators
+    final priceChanged = ref.watch(priceChangeProvider(symbol.code));
+    final isIncreasing = ref.watch(priceDirectionProvider(symbol.code));
+
+    // Listen for price changes - wrap in try-catch to handle potential errors
+    try {
+      ref.listen<AsyncValue<MarketData>>(
+        marketDataProvider(symbol.code),
+        (previous, current) {
+          if (previous != null &&
+              previous.hasValue &&
+              current.hasValue &&
+              previous.value!.lastPrice != current.value!.lastPrice) {
+            // Update price direction
+            ref.read(priceDirectionProvider(symbol.code).notifier).state =
+                current.value!.lastPrice > previous.value!.lastPrice;
+
+            // Set price changed flag
+            ref.read(priceChangeProvider(symbol.code).notifier).state = true;
+
+            // Reset price changed flag after animation
+            Future.delayed(const Duration(milliseconds: 1000), () {
+              ref.read(priceChangeProvider(symbol.code).notifier).state = false;
             });
           }
-        });
-      }
-      _previousPrice = marketData.lastPrice;
-    });
+        },
+      );
+    } catch (e) {
+      log('Error in market data listener: $e');
+      // Continue with the UI even if the listener fails
+    }
 
     return GestureDetector(
       onTap: () => _selectSymbol(context, ref),
@@ -61,22 +85,44 @@ class _MarketDataTileState extends ConsumerState<MarketDataTile> {
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          child: marketDataAsync.when(
-            data: (marketData) => _buildTileContent(marketData, theme),
-            loading: () => const SizedBox(
-              height: 60,
-              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          child: marketDataAsyncValue.when(
+              data: (marketData) => _buildTileContent(
+                  marketData, theme, priceChanged, isIncreasing),
+              loading: () => _buildLoadingPlaceholder(),
+              error: (error, stack) {
+                log('Error loading market data: $error $stack');
+                return _buildErrorPlaceholder(context, theme);
+              }),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingPlaceholder() {
+    return const SizedBox(
+      height: 60,
+      child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+    );
+  }
+
+  Widget _buildErrorPlaceholder(BuildContext context, ThemeData theme) {
+    return SizedBox(
+      height: 60,
+      child: Center(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.sync_problem,
+              size: 16,
+              color: theme.colorScheme.error,
             ),
-            error: (error, _) => SizedBox(
-              height: 60,
-              child: Center(
-                child: Text(
-                  'Error loading data',
-                  style: TextStyle(color: theme.colorScheme.error),
-                ),
-              ),
+            const SizedBox(width: 8),
+            Text(
+              'Connecting...',
+              style: TextStyle(color: theme.colorScheme.error),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -84,7 +130,7 @@ class _MarketDataTileState extends ConsumerState<MarketDataTile> {
 
   void _selectSymbol(BuildContext context, WidgetRef ref) {
     // Set the selected symbol for the chart
-    ref.read(selectedSymbolProvider.notifier).state = widget.symbol;
+    ref.read(selectedSymbolProvider.notifier).state = symbol;
 
     // Reset to default timeframe when selecting a new symbol
     ref.read(selectedKLineTypeProvider.notifier).state = KLineType.oneDay;
@@ -95,7 +141,12 @@ class _MarketDataTileState extends ConsumerState<MarketDataTile> {
     }
   }
 
-  Widget _buildTileContent(MarketData data, ThemeData theme) {
+  Widget _buildTileContent(
+    MarketData data,
+    ThemeData theme,
+    bool priceChanged,
+    bool isIncreasing,
+  ) {
     final priceFormat = NumberFormat.currency(
       symbol: '',
       decimalDigits: 2,
@@ -110,9 +161,9 @@ class _MarketDataTileState extends ConsumerState<MarketDataTile> {
           : data.lastPrice < data.open!
               ? Colors.red
               : theme.textTheme.bodyLarge!.color!;
-    } else if (_priceChanged) {
+    } else if (priceChanged) {
       // Fallback to animation-based color if open price not available
-      priceColor = _isIncreasing ? Colors.green : Colors.red;
+      priceColor = isIncreasing ? Colors.green : Colors.red;
     }
 
     return Row(
@@ -126,10 +177,10 @@ class _MarketDataTileState extends ConsumerState<MarketDataTile> {
             children: [
               Row(
                 children: [
-                  _buildTypeIcon(widget.symbol.type),
+                  _buildTypeIcon(symbol.type),
                   const SizedBox(width: 6),
                   Text(
-                    widget.symbol.code,
+                    symbol.code,
                     style: theme.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
@@ -138,7 +189,7 @@ class _MarketDataTileState extends ConsumerState<MarketDataTile> {
               ),
               const SizedBox(height: 2),
               Text(
-                widget.symbol.name,
+                symbol.name,
                 style: theme.textTheme.bodySmall?.copyWith(
                   fontSize: 10,
                 ),
@@ -185,9 +236,9 @@ class _MarketDataTileState extends ConsumerState<MarketDataTile> {
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  if (_priceChanged)
+                  if (priceChanged)
                     Icon(
-                      _isIncreasing ? Icons.arrow_upward : Icons.arrow_downward,
+                      isIncreasing ? Icons.arrow_upward : Icons.arrow_downward,
                       color: priceColor,
                       size: 12,
                     ),
@@ -245,15 +296,15 @@ class _MarketDataTileState extends ConsumerState<MarketDataTile> {
     }
 
     return Container(
-      padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Icon(
         iconData,
-        color: color,
         size: 12,
+        color: color,
       ),
     );
   }
@@ -266,8 +317,8 @@ class _MarketDataTileState extends ConsumerState<MarketDataTile> {
         Text(
           label,
           style: theme.textTheme.bodySmall?.copyWith(
-            fontSize: 9,
-            color: theme.colorScheme.primary.withOpacity(0.7),
+            fontSize: 10,
+            color: theme.textTheme.bodySmall?.color?.withOpacity(0.7),
           ),
         ),
         const SizedBox(height: 2),
