@@ -6,7 +6,56 @@ import '../models/account_balance.dart';
 import '../models/trade.dart';
 import '../providers/account_provider.dart';
 import '../providers/trade_provider.dart';
+import '../providers/market_data_provider.dart';
 import '../widgets/responsive_layout.dart';
+
+// Provider for total P/L of all open positions (copied from trade_page.dart)
+final totalProfitLossProvider = Provider<AsyncValue<double>>((ref) {
+  final tradesAsync = ref.watch(tradesProvider);
+
+  return tradesAsync.when(
+    data: (trades) {
+      final openTrades =
+          trades.where((t) => t.status == TradeStatus.open).toList();
+
+      // If no open trades, return 0
+      if (openTrades.isEmpty) {
+        return const AsyncData(0.0);
+      }
+
+      // Create a list of market data providers for all open trades
+      final marketDataProviders = openTrades
+          .map((trade) => ref.watch(marketDataProvider(trade.symbolCode)))
+          .toList();
+
+      // Check if any market data is still loading or has error
+      final hasLoading = marketDataProviders.any((p) => p is AsyncLoading);
+      final hasError = marketDataProviders.any((p) => p is AsyncError);
+
+      if (hasLoading) {
+        return const AsyncLoading();
+      }
+
+      if (hasError) {
+        return AsyncError('Error loading market data', StackTrace.current);
+      }
+
+      // Calculate total P/L
+      double total = 0.0;
+      for (int i = 0; i < openTrades.length; i++) {
+        final trade = openTrades[i];
+        final marketData = marketDataProviders[i].value;
+        if (marketData != null) {
+          total += trade.calculateProfit(marketData.lastPrice);
+        }
+      }
+
+      return AsyncData(total);
+    },
+    loading: () => const AsyncLoading(),
+    error: (error, stack) => AsyncError(error, stack),
+  );
+});
 
 class HistoryPage extends ConsumerStatefulWidget {
   const HistoryPage({Key? key}) : super(key: key);
@@ -100,6 +149,8 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
 
     // Get account balance
     final accountBalanceAsync = ref.watch(accountBalanceProvider);
+    // Get total P&L for all open positions (like in trade_page.dart)
+    final totalProfitLossAsync = ref.watch(totalProfitLossProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -274,103 +325,313 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
     final theme = Theme.of(context);
     final isMobile = ResponsiveLayout.isMobile(context);
 
-    return Card(
+    // Get total P&L to display
+    final totalProfitLossAsync = ref.watch(totalProfitLossProvider);
+
+    return Container(
+      width: double.infinity,
       margin: EdgeInsets.all(isMobile ? 8 : 16),
-      elevation: 2,
-      child: Padding(
-        padding: EdgeInsets.all(isMobile ? 12 : 16),
-        child: Column(
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Account Balance',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(
-                  '\$${accountBalance.balance.toStringAsFixed(2)}',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildAccountMetric(
-                    context,
-                    'Equity',
-                    '\$${accountBalance.equity.toStringAsFixed(2)}',
-                  ),
-                ),
-                Expanded(
-                  child: _buildAccountMetric(
-                    context,
-                    'Margin',
-                    '\$${accountBalance.margin.toStringAsFixed(2)}',
-                  ),
-                ),
-                Expanded(
-                  child: _buildAccountMetric(
-                    context,
-                    'Free Margin',
-                    '\$${accountBalance.freeMargin.toStringAsFixed(2)}',
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildAccountMetric(
-                    context,
-                    'Credit',
-                    '\$${accountBalance.credit.toStringAsFixed(2)}',
-                  ),
-                ),
-                Expanded(
-                  child: _buildAccountMetric(
-                    context,
-                    'Margin Level',
-                    '${accountBalance.marginLevel.toStringAsFixed(2)}%',
-                  ),
-                ),
-                const Expanded(child: SizedBox()),
-              ],
-            ),
-          ],
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: theme.colorScheme.outline.withOpacity(0.3),
         ),
       ),
-    );
-  }
-
-  Widget _buildAccountMetric(BuildContext context, String label, String value) {
-    final theme = Theme.of(context);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurface.withOpacity(0.7),
+      child: Column(
+        children: [
+          // First row - Balance & Equity
+          Row(
+            children: [
+              // Balance
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'BALANCE',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurface.withOpacity(0.7),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '\$${accountBalance.balance.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Equity - now dependent on P&L like in trade_page
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'EQUITY',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurface.withOpacity(0.7),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    totalProfitLossAsync.when(
+                      data: (totalPL) {
+                        // Calculate equity as balance + P&L
+                        final equity = accountBalance.balance + totalPL;
+                        return Text(
+                          '\$${equity.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        );
+                      },
+                      loading: () => const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      error: (_, __) => Text(
+                        'Error',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.red,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w500,
+
+          const SizedBox(height: 12),
+
+          // New row - P&L (like in trade_page.dart)
+          Row(
+            children: [
+              // P&L
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'PROFIT/LOSS',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurface.withOpacity(0.7),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    totalProfitLossAsync.when(
+                      data: (total) {
+                        final isProfit = total >= 0;
+                        return Text(
+                          '${isProfit ? '+' : ''}\$${total.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: isProfit ? Colors.green : Colors.red,
+                          ),
+                        );
+                      },
+                      loading: () => const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      error: (_, __) => Text(
+                        'Error',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.red,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Blank space to match layout
+              Expanded(child: Container()),
+            ],
           ),
-        ),
-      ],
+
+          const SizedBox(height: 12),
+
+          // Second row - Margin & Free Margin
+          Row(
+            children: [
+              // Margin
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'MARGIN',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurface.withOpacity(0.7),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '\$${accountBalance.margin.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Free Margin
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'FREE MARGIN',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurface.withOpacity(0.7),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    totalProfitLossAsync.when(
+                      data: (totalPL) {
+                        // Free margin might also depend on P&L
+                        final freeMargin = accountBalance.freeMargin + totalPL;
+                        return Text(
+                          '\$${freeMargin.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        );
+                      },
+                      loading: () => Text(
+                        '\$${accountBalance.freeMargin.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
+                      error: (_, __) => Text(
+                        '\$${accountBalance.freeMargin.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Third row - Credit & Margin Level
+          Row(
+            children: [
+              // Credit
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'CREDIT',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurface.withOpacity(0.7),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '\$${accountBalance.credit.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Margin Level
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'MARGIN LEVEL',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurface.withOpacity(0.7),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    totalProfitLossAsync.when(
+                      data: (totalPL) {
+                        // Recalculate margin level based on equity with P&L
+                        final equity = accountBalance.balance + totalPL;
+                        final marginLevel = accountBalance.margin > 0
+                            ? (equity / accountBalance.margin) * 100
+                            : 0.0;
+
+                        return Text(
+                          '${marginLevel.toStringAsFixed(2)}%',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        );
+                      },
+                      loading: () => Text(
+                        '${accountBalance.marginLevel.toStringAsFixed(2)}%',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
+                      error: (_, __) => Text(
+                        '${accountBalance.marginLevel.toStringAsFixed(2)}%',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -435,68 +696,90 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
     final isMobile = ResponsiveLayout.isMobile(context);
 
     // Format date
-    final dateFormat = DateFormat('MMM dd, yyyy HH:mm');
+    final dateFormat = DateFormat('yyyy.MM.dd HH:mm:ss');
     final date = dateFormat.format(transaction.createdAt);
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 4),
       elevation: 1,
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: transaction.getColor(context).withOpacity(0.1),
-          child: Icon(
-            transaction.getIcon(),
-            color: transaction.getColor(context),
-            size: 20,
-          ),
-        ),
-        title: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              transaction.getTypeDisplayName(),
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            Text(
-              (transaction.type == TransactionType.deposit ||
-                          transaction.type == TransactionType.profit ||
-                          transaction.type == TransactionType.credit
-                      ? '+'
-                      : '-') +
-                  '\$${transaction.amount.toStringAsFixed(2)}',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.bold,
+      child: Container(
+        color: theme.colorScheme.surface,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            border: Border(
+              left: BorderSide(
                 color: transaction.getColor(context),
+                width: 4,
               ),
             ),
-          ],
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 4),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  transaction.description ?? '',
-                  style: theme.textTheme.bodySmall,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+          ),
+          child: Row(
+            children: [
+              // Transaction type and description
+              Expanded(
+                flex: 2,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          transaction.getTypeDisplayName(),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      transaction.description ?? '',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
-                Text(
-                  date,
-                  style: theme.textTheme.bodySmall,
+              ),
+
+              // Amount and date
+              Expanded(
+                flex: 1,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      (transaction.type == TransactionType.deposit ||
+                                  transaction.type == TransactionType.profit ||
+                                  transaction.type == TransactionType.credit
+                              ? '+'
+                              : '-') +
+                          '\$${transaction.amount.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: transaction.getColor(context),
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      DateFormat('MM/dd HH:mm').format(transaction.createdAt),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ],
-        ),
-        contentPadding: EdgeInsets.symmetric(
-          horizontal: isMobile ? 12 : 16,
-          vertical: isMobile ? 8 : 12,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -544,158 +827,146 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
     final isMobile = ResponsiveLayout.isMobile(context);
 
     // Format dates
-    final dateFormat = DateFormat('MMM dd, yyyy HH:mm');
+    final dateFormat = DateFormat('yyyy.MM.dd HH:mm:ss');
     final openDate = dateFormat.format(trade.openTime);
     final closeDate =
-        trade.closeTime != null ? dateFormat.format(trade.closeTime!) : '';
+        trade.closeTime != null ? dateFormat.format(trade.closeTime!) : '—';
 
-    // Calculate profit/loss color
+    // Calculate profit/loss
     final isProfitable = trade.profit != null ? trade.profit! >= 0 : false;
     final profitColor = isProfitable ? Colors.green : Colors.red;
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 4),
       elevation: 1,
-      child: Padding(
-        padding: EdgeInsets.all(isMobile ? 12 : 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header row with symbol and type
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
+      child: InkWell(
+        onTap: () {
+          // This could be expanded to show more details if needed
+        },
+        child: Container(
+          color: theme.colorScheme.surface,
+          child: Column(
+            children: [
+              // Main row that's always visible
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  border: Border(
+                    left: BorderSide(
+                      color: isProfitable ? Colors.green : Colors.red,
+                      width: 4,
+                    ),
+                  ),
+                ),
+                child: Row(
                   children: [
-                    Text(
-                      trade.symbolCode,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
+                    // Symbol and type column
+                    Expanded(
+                      flex: 2,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                trade.symbolCode,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                trade.type == TradeType.buy ? 'buy' : 'sell',
+                                style: TextStyle(
+                                  color: trade.type == TradeType.buy
+                                      ? theme.colorScheme.primary
+                                      : Colors.red,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                trade.volume.toStringAsFixed(2),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Text(
+                                '${trade.entryPrice.toStringAsFixed(5)} → ',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                              trade.exitPrice != null
+                                  ? Text(
+                                      trade.exitPrice!.toStringAsFixed(5),
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                      ),
+                                    )
+                                  : const Text('—',
+                                      style: TextStyle(fontSize: 13)),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: trade.type == TradeType.buy
-                            ? theme.colorScheme.primary.withOpacity(0.1)
-                            : Colors.red.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        trade.type == TradeType.buy ? 'BUY' : 'SELL',
-                        style: TextStyle(
-                          color: trade.type == TradeType.buy
-                              ? theme.colorScheme.primary
-                              : Colors.red,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
+
+                    // Profit column
+                    Expanded(
+                      flex: 1,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          trade.profit != null
+                              ? Text(
+                                  isProfitable
+                                      ? '+\$${trade.profit!.toStringAsFixed(2)}'
+                                      : '-\$${(-trade.profit!).toStringAsFixed(2)}',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: profitColor,
+                                    fontSize: 15,
+                                  ),
+                                )
+                              : const Text(
+                                  '—',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                          const SizedBox(height: 4),
+                          Text(
+                            DateFormat('MM/dd HH:mm')
+                                .format(trade.closeTime ?? trade.openTime),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-                Text(
-                  trade.profit != null
-                      ? '${trade.profit! >= 0 ? '+' : ''}\$${trade.profit!.toStringAsFixed(2)}'
-                      : '-',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: profitColor,
-                  ),
-                ),
-              ],
-            ),
+              ),
 
-            const SizedBox(height: 12),
-
-            // Trade details
-            Row(
-              children: [
-                Expanded(
-                  child: _buildTradeDetailItem(
-                    context,
-                    'Volume',
-                    '${trade.volume.toStringAsFixed(2)} lot',
-                  ),
-                ),
-                Expanded(
-                  child: _buildTradeDetailItem(
-                    context,
-                    'Leverage',
-                    '${trade.leverage.toStringAsFixed(0)}x',
-                  ),
-                ),
-                Expanded(
-                  child: _buildTradeDetailItem(
-                    context,
-                    'Entry Price',
-                    '\$${trade.entryPrice.toStringAsFixed(2)}',
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 8),
-
-            // Second row of details
-            Row(
-              children: [
-                Expanded(
-                  child: _buildTradeDetailItem(
-                    context,
-                    'Opened',
-                    openDate,
-                  ),
-                ),
-                Expanded(
-                  child: _buildTradeDetailItem(
-                    context,
-                    'Closed',
-                    closeDate,
-                  ),
-                ),
-                Expanded(
-                  child: _buildTradeDetailItem(
-                    context,
-                    'Exit Price',
-                    trade.exitPrice != null
-                        ? '\$${trade.exitPrice!.toStringAsFixed(2)}'
-                        : '-',
-                  ),
-                ),
-              ],
-            ),
-          ],
+              // Optional: Add an expandable details section here
+              // similar to what's in trade_page.dart
+            ],
+          ),
         ),
       ),
-    );
-  }
-
-  Widget _buildTradeDetailItem(
-      BuildContext context, String label, String value) {
-    final theme = Theme.of(context);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurface.withOpacity(0.7),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
     );
   }
 

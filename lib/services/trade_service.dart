@@ -230,6 +230,70 @@ class TradeService {
     await _accountService.updateAccountMetrics();
   }
 
+  // Partial close a trade
+  Future<Trade> partialCloseTrade({
+    required String tradeId,
+    required double exitPrice,
+    required double volumeToClose,
+  }) async {
+    // Get the current trade
+    final response =
+        await _supabase.from('trades').select().eq('id', tradeId).single();
+
+    final trade = Trade.fromJson(response);
+
+    // Ensure volumeToClose is less than or equal to the current volume
+    if (volumeToClose > trade.volume) {
+      throw Exception('Volume to close exceeds current trade volume');
+    }
+
+    final now = DateTime.now();
+
+    // Calculate the profit for the partial volume
+    final profitPerUnit = trade.calculateProfit(exitPrice) / trade.volume;
+    final partialProfit = profitPerUnit * volumeToClose;
+
+    // Create a new closed trade record for the partial close
+    final partialTrade = Trade(
+      id: _uuid.v4(),
+      userId: trade.userId,
+      symbolCode: trade.symbolCode,
+      symbolName: trade.symbolName,
+      type: trade.type,
+      orderType: trade.orderType,
+      entryPrice: trade.entryPrice,
+      exitPrice: exitPrice,
+      volume: volumeToClose,
+      leverage: trade.leverage,
+      openTime: trade.openTime,
+      closeTime: now,
+      status: TradeStatus.closed,
+      profit: partialProfit,
+    );
+
+    // Insert the partial closed trade
+    await _supabase.from('trades').insert(partialTrade.toJson());
+
+    // Update the original trade with reduced volume
+    final remainingVolume = trade.volume - volumeToClose;
+    final updatedTrade = await _supabase
+        .from('trades')
+        .update({
+          'volume': remainingVolume,
+        })
+        .eq('id', tradeId)
+        .select()
+        .single();
+
+    // Process profit/loss and update account balance
+    await _accountService.processTradeProfitLoss(partialTrade);
+
+    // Update account metrics
+    await _accountService.updateAccountMetrics();
+
+    return Trade.fromJson(updatedTrade);
+  }
+
   // Check if any open trades need to be closed based on current price
   Future<void> checkAndProcessTrades(
       String symbolCode, double currentPrice) async {

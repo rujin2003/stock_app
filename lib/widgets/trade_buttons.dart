@@ -439,25 +439,6 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
                     ],
                   ),
 
-                  // Display fixed leverage info
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8.0),
-                    child: Row(
-                      children: [
-                        Text('Leverage:', style: theme.textTheme.bodyMedium),
-                        const SizedBox(width: 8),
-                        Text(
-                          '25x (fixed)',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
                   // Stop Loss, Take Profit, and Trailing Stop (always visible now)
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -553,7 +534,7 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
                         style: theme.textTheme.bodySmall,
                       ),
                       Text(
-                        'Value: \$${(widget.currentPrice * form.volume * form.leverage).toStringAsFixed(2)}',
+                        'Total Value: \$${(widget.currentPrice * form.volume * form.leverage).toStringAsFixed(2)}',
                         style: theme.textTheme.bodySmall,
                       ),
                     ],
@@ -777,31 +758,6 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
                 fontWeight: isRequired ? FontWeight.bold : FontWeight.normal,
               ),
             ),
-            Row(
-              children: [
-                TextButton(
-                  onPressed: () {
-                    final valueText = suggestedValue.toStringAsFixed(2);
-                    // Update provider first
-                    onChanged(suggestedValue);
-                    // Then update text field
-                    controller.text = valueText;
-                  },
-                  style: TextButton.styleFrom(
-                    padding: EdgeInsets.zero,
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: Text(
-                    'Suggest',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.primary,
-                      decoration: TextDecoration.underline,
-                    ),
-                  ),
-                ),
-              ],
-            ),
           ],
         ),
         if (description != null)
@@ -834,7 +790,7 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(4),
             ),
-            hintText: isRequired ? 'Required' : 'Optional',
+            hintText: isRequired ? 'Required' : null,
             suffixText: isTrailingStop ? 'points' : null,
           ),
           style: theme.textTheme.bodyMedium,

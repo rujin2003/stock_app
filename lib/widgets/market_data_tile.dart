@@ -153,7 +153,7 @@ class MarketDataTile extends ConsumerWidget {
   ) {
     final priceFormat = NumberFormat.currency(
       symbol: '',
-      decimalDigits: 2,
+      decimalDigits: data.lastPrice < 100 ? 5 : 2,
     );
 
     Color priceColor = theme.textTheme.bodyLarge!.color!;
@@ -161,113 +161,134 @@ class MarketDataTile extends ConsumerWidget {
     // Determine color based on change from open price if available
     if (data.open != null) {
       priceColor = data.lastPrice > data.open!
-          ? Colors.green
+          ? theme.colorScheme.primary
           : data.lastPrice < data.open!
-              ? Colors.red
+              ? theme.colorScheme.error
               : theme.textTheme.bodyLarge!.color!;
     } else if (priceChanged) {
       // Fallback to animation-based color if open price not available
-      priceColor = isIncreasing ? Colors.green : Colors.red;
+      priceColor =
+          isIncreasing ? theme.colorScheme.primary : theme.colorScheme.error;
     }
 
-    return Row(
+    // Calculate change values
+    final changeAmount = data.changeAmount ?? 0;
+    final changePercent = data.changePercent ?? 0;
+    final changeSign = changeAmount >= 0 ? "" : "-";
+
+    // Format change value properly - don't truncate to int for forex pairs
+    String formattedChange;
+    if (symbol.type.toLowerCase() == 'forex') {
+      // For forex pairs, show pip changes (multiply by 10000)
+      final pips = (changeAmount.abs() * 10000).round();
+      formattedChange = "$changeSign$pips";
+    } else {
+      // For other instruments, use appropriate formatting
+      formattedChange = "$changeSign${changeAmount.abs().toStringAsFixed(2)}";
+    }
+
+    // Get time
+    final now = DateTime.now();
+    final timeFormat = DateFormat('HH:mm:ss');
+    final formattedTime = timeFormat.format(now);
+
+    // Format the last price
+    String lastPrice = priceFormat.format(data.lastPrice);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        // Symbol and name section
-        Expanded(
-          flex: 3,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  _buildTypeIcon(symbol.type),
-                  const SizedBox(width: 6),
-                  Text(
-                    symbol.code,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
+        Row(
+          children: [
+            // Change and percentage section on left
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      formattedChange,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: priceColor,
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 2),
-              Text(
-                symbol.name,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontSize: 10,
+                    const SizedBox(width: 4),
+                    Text(
+                      "$changeSign${changePercent.abs().toStringAsFixed(2)}%",
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: priceColor,
+                      ),
+                    ),
+                  ],
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ),
-
-        // OHLC section
-        Expanded(
-          flex: 5,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _buildCompactOHLCItem(
-                  'O',
-                  data.open != null ? priceFormat.format(data.open!) : '-',
-                  theme),
-              _buildCompactOHLCItem(
-                  'H',
-                  data.high != null ? priceFormat.format(data.high!) : '-',
-                  theme),
-              _buildCompactOHLCItem(
-                  'L',
-                  data.low != null ? priceFormat.format(data.low!) : '-',
-                  theme),
-              _buildCompactOHLCItem(
-                  'C', priceFormat.format(data.lastPrice), theme,
-                  isLast: true, color: priceColor),
-            ],
-          ),
-        ),
-
-        // Price and change section
-        Expanded(
-          flex: 3,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  if (priceChanged)
-                    Icon(
-                      isIncreasing ? Icons.arrow_upward : Icons.arrow_downward,
-                      color: priceColor,
-                      size: 12,
+                Row(
+                  children: [
+                    Text(
+                      symbol.code,
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onBackground,
+                      ),
                     ),
-                  const SizedBox(width: 2),
-                  AnimatedDefaultTextStyle(
-                    style: theme.textTheme.titleSmall!.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: priceColor,
+                  ],
+                ),
+                Row(
+                  children: [
+                    Text(
+                      "$formattedTime ",
+                      style: TextStyle(
+                        color: theme.colorScheme.onBackground.withOpacity(0.7),
+                        fontSize: 14,
+                      ),
                     ),
-                    duration: const Duration(milliseconds: 500),
-                    child: Text(priceFormat.format(data.lastPrice)),
-                  ),
-                ],
-              ),
-              if (data.changeAmount != null && data.changePercent != null)
+                  ],
+                ),
+              ],
+            ),
+
+            const Spacer(),
+
+            // Last price and high/low values on right
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                // Last price (ld)
                 Text(
-                  '${data.changeAmount! >= 0 ? "+" : ""}${data.changePercent!.toStringAsFixed(2)}%',
+                  lastPrice,
                   style: TextStyle(
-                    color: priceColor,
-                    fontSize: 10,
+                    fontSize: 24,
                     fontWeight: FontWeight.bold,
+                    color: priceColor,
                   ),
                 ),
-            ],
-          ),
+                // High/Low values
+                Row(
+                  children: [
+                    Text(
+                      "L: ${priceFormat.format(data.low ?? 0)}",
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: theme.colorScheme.onBackground.withOpacity(0.7),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Text(
+                      "H: ${priceFormat.format(data.high ?? 0)}",
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: theme.colorScheme.onBackground.withOpacity(0.7),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
         ),
       ],
     );

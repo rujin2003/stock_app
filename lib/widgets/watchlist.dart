@@ -57,18 +57,6 @@ class Watchlist extends ConsumerWidget {
                 ),
               ),
               Expanded(
-                flex: 5,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _buildHeaderItem('O', theme),
-                    _buildHeaderItem('H', theme),
-                    _buildHeaderItem('L', theme),
-                    _buildHeaderItem('C', theme),
-                  ],
-                ),
-              ),
-              Expanded(
                 flex: 3,
                 child: Text(
                   'Change',

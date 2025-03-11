@@ -3,9 +3,77 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../models/trade.dart';
+import '../models/account_balance.dart';
 import '../providers/trade_provider.dart';
 import '../providers/market_data_provider.dart';
+import '../providers/account_provider.dart';
 import '../widgets/responsive_layout.dart';
+
+// Provider for user equity (balance + unrealized P/L)
+final userEquityProvider = Provider<AsyncValue<double>>((ref) {
+  final accountBalanceAsync = ref.watch(accountBalanceProvider);
+  final plAsync = ref.watch(totalProfitLossProvider);
+
+  return accountBalanceAsync.when(
+    data: (accountBalance) {
+      return plAsync.when(
+        data: (pl) => AsyncData(accountBalance.balance + pl),
+        loading: () => const AsyncLoading(),
+        error: (error, stackTrace) => AsyncError(error, stackTrace),
+      );
+    },
+    loading: () => const AsyncLoading(),
+    error: (error, stackTrace) => AsyncError(error, stackTrace),
+  );
+});
+
+// Provider for total P/L of all open positions
+final totalProfitLossProvider = Provider<AsyncValue<double>>((ref) {
+  final tradesAsync = ref.watch(tradesProvider);
+
+  return tradesAsync.when(
+    data: (trades) {
+      final openTrades =
+          trades.where((t) => t.status == TradeStatus.open).toList();
+
+      // If no open trades, return 0
+      if (openTrades.isEmpty) {
+        return const AsyncData(0.0);
+      }
+
+      // Create a list of market data providers for all open trades
+      final marketDataProviders = openTrades
+          .map((trade) => ref.watch(marketDataProvider(trade.symbolCode)))
+          .toList();
+
+      // Check if any market data is still loading or has error
+      final hasLoading = marketDataProviders.any((p) => p is AsyncLoading);
+      final hasError = marketDataProviders.any((p) => p is AsyncError);
+
+      if (hasLoading) {
+        return const AsyncLoading();
+      }
+
+      if (hasError) {
+        return AsyncError('Error loading market data', StackTrace.current);
+      }
+
+      // Calculate total P/L
+      double total = 0.0;
+      for (int i = 0; i < openTrades.length; i++) {
+        final trade = openTrades[i];
+        final marketData = marketDataProviders[i].value;
+        if (marketData != null) {
+          total += trade.calculateProfit(marketData.lastPrice);
+        }
+      }
+
+      return AsyncData(total);
+    },
+    loading: () => const AsyncLoading(),
+    error: (error, stack) => AsyncError(error, stack),
+  );
+});
 
 class TradePage extends ConsumerWidget {
   const TradePage({Key? key}) : super(key: key);
@@ -15,12 +83,221 @@ class TradePage extends ConsumerWidget {
     final theme = Theme.of(context);
     final isMobile = ResponsiveLayout.isMobile(context);
     final tradesAsync = ref.watch(tradesProvider);
+    final totalProfitLossAsync = ref.watch(totalProfitLossProvider);
+    final accountBalanceAsync = ref.watch(accountBalanceProvider);
+    final equityAsync = ref.watch(userEquityProvider);
 
     return DefaultTabController(
       length: 3,
       child: Scaffold(
         appBar: AppBar(
-          toolbarHeight: 0,
+          toolbarHeight: 100, // Increase height to accommodate account info
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // MetaTrader style account info panel
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: theme.colorScheme.outline.withOpacity(0.3),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    // First row - Balance & Equity
+                    Row(
+                      children: [
+                        // Balance
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'BALANCE',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: theme.colorScheme.onSurface
+                                      .withOpacity(0.7),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              accountBalanceAsync.when(
+                                data: (accountBalance) => Text(
+                                  '\$${accountBalance.balance.toStringAsFixed(2)}',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: theme.colorScheme.onSurface,
+                                  ),
+                                ),
+                                loading: () => const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                                error: (_, __) => Text(
+                                  'Error',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.red,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Equity
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'EQUITY',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: theme.colorScheme.onSurface
+                                      .withOpacity(0.7),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              equityAsync.when(
+                                data: (equity) => Text(
+                                  '\$${equity.toStringAsFixed(2)}',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: theme.colorScheme.onSurface,
+                                  ),
+                                ),
+                                loading: () => const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                                error: (_, __) => Text(
+                                  'Error',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.red,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    // Second row - P/L & Margin
+                    Row(
+                      children: [
+                        // P/L
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'PROFIT/LOSS',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: theme.colorScheme.onSurface
+                                      .withOpacity(0.7),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              totalProfitLossAsync.when(
+                                data: (total) {
+                                  final isProfit = total >= 0;
+                                  return Text(
+                                    '${isProfit ? '+' : ''}\$${total.toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color:
+                                          isProfit ? Colors.green : Colors.red,
+                                    ),
+                                  );
+                                },
+                                loading: () => const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                                error: (_, __) => Text(
+                                  'Error',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.red,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Margin
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'MARGIN',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: theme.colorScheme.onSurface
+                                      .withOpacity(0.7),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              accountBalanceAsync.when(
+                                data: (accountBalance) => Text(
+                                  '\$${accountBalance.margin.toStringAsFixed(2)}',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: theme.colorScheme.onSurface,
+                                  ),
+                                ),
+                                loading: () => const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                                error: (_, __) => Text(
+                                  'Error',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.red,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
           bottom: TabBar(
             tabs: const [
               Tab(text: 'Open Positions'),
@@ -150,230 +427,299 @@ class TradePage extends ConsumerWidget {
         itemCount: trades.length,
         itemBuilder: (context, index) {
           final trade = trades[index];
-          return _buildTradeCard(context, trade, isOpenTrades, ref);
+          return isOpenTrades
+              ? MetaTraderStyleTradeCard(trade: trade)
+              : MetaTraderStyleHistoryCard(trade: trade);
         },
       ),
     );
   }
 
-  Widget _buildTradeCard(
-      BuildContext context, Trade trade, bool isOpenTrade, WidgetRef ref) {
+  Widget _buildPendingOrdersList(
+      BuildContext context, List<Trade> pendingTrades, WidgetRef ref) {
+    return RefreshIndicator(
+      onRefresh: () async {
+        // Refresh trades
+        ref.refresh(tradesProvider);
+      },
+      child: pendingTrades.isEmpty
+          ? _buildEmptyState(
+              context,
+              'No Pending Orders',
+              'Your pending orders will appear here',
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(8),
+              itemCount: pendingTrades.length,
+              itemBuilder: (context, index) {
+                final trade = pendingTrades[index];
+                return MetaTraderStylePendingOrderCard(trade: trade);
+              },
+            ),
+    );
+  }
+}
+
+class MetaTraderStyleTradeCard extends ConsumerStatefulWidget {
+  final Trade trade;
+
+  const MetaTraderStyleTradeCard({
+    Key? key,
+    required this.trade,
+  }) : super(key: key);
+
+  @override
+  ConsumerState<MetaTraderStyleTradeCard> createState() =>
+      _MetaTraderStyleTradeCardState();
+}
+
+class _MetaTraderStyleTradeCardState
+    extends ConsumerState<MetaTraderStyleTradeCard> {
+  bool isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isMobile = ResponsiveLayout.isMobile(context);
+    final trade = widget.trade;
 
     // Format dates
-    final dateFormat = DateFormat('MMM dd, yyyy HH:mm');
+    final dateFormat = DateFormat('yyyy.MM.dd HH:mm:ss');
     final openDate = dateFormat.format(trade.openTime);
-    final closeDate =
-        trade.closeTime != null ? dateFormat.format(trade.closeTime!) : '';
 
-    // Calculate profit/loss color
-    final isProfitable = trade.profit != null ? trade.profit! >= 0 : false;
-    final profitColor = isProfitable ? Colors.green : Colors.red;
-
-    // Get current price for open trades
-    Widget profitLossWidget;
-    if (isOpenTrade) {
-      final marketDataAsync = ref.watch(marketDataProvider(trade.symbolCode));
-      profitLossWidget = marketDataAsync.when(
-        data: (marketData) {
-          final currentPrice = marketData.lastPrice;
-          final profit = trade.calculateProfit(currentPrice);
-          final isProfitable = profit >= 0;
-
-          return Text(
-            (profit >= 0 ? '+' : '') + '\$${profit.toStringAsFixed(2)}',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w500,
-              color: isProfitable ? Colors.green : Colors.red,
-            ),
-          );
-        },
-        loading: () => Text(
-          '...',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        error: (_, __) => Text(
-          'Error',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w500,
-            color: Colors.red,
-          ),
-        ),
-      );
-    } else {
-      profitLossWidget = Text(
-        trade.profit != null
-            ? (trade.profit! >= 0 ? '+' : '') +
-                '\$${trade.profit!.toStringAsFixed(2)}'
-            : '-',
-        style: theme.textTheme.bodyMedium?.copyWith(
-          fontWeight: FontWeight.w500,
-          color: profitColor,
-        ),
-      );
-    }
+    // Get current price and profit
+    final marketDataAsync = ref.watch(marketDataProvider(trade.symbolCode));
 
     return Card(
-      margin: EdgeInsets.only(bottom: isMobile ? 8 : 12),
+      margin: const EdgeInsets.only(bottom: 4),
       elevation: 1,
-      child: Padding(
-        padding: EdgeInsets.all(isMobile ? 12 : 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header row with symbol and type
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            isExpanded = !isExpanded;
+          });
+        },
+        child: Container(
+          color: theme.colorScheme.surface,
+          child: Column(
+            children: [
+              // Main row that's always visible
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  border: Border(
+                    left: BorderSide(
+                      color: trade.type == TradeType.buy
+                          ? theme.colorScheme.primary
+                          : Colors.red,
+                      width: 4,
+                    ),
+                  ),
+                ),
+                child: Row(
                   children: [
-                    Text(
-                      trade.symbolCode,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
+                    // Symbol and type column
+                    Expanded(
+                      flex: 2,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                trade.symbolCode,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                trade.type == TradeType.buy ? 'buy' : 'sell',
+                                style: TextStyle(
+                                  color: trade.type == TradeType.buy
+                                      ? theme.colorScheme.primary
+                                      : Colors.red,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                trade.volume.toStringAsFixed(2),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Text(
+                                '${trade.entryPrice.toStringAsFixed(5)} → ',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                              marketDataAsync.when(
+                                data: (marketData) => Text(
+                                  marketData.lastPrice.toStringAsFixed(5),
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                loading: () => const Text('...',
+                                    style: TextStyle(fontSize: 13)),
+                                error: (_, __) => const Text('Error',
+                                    style: TextStyle(
+                                        fontSize: 13, color: Colors.red)),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: trade.type == TradeType.buy
-                            ? theme.colorScheme.primary.withOpacity(0.1)
-                            : Colors.red.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        trade.type == TradeType.buy ? 'BUY' : 'SELL',
-                        style: TextStyle(
-                          color: trade.type == TradeType.buy
-                              ? theme.colorScheme.primary
-                              : Colors.red,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
+                    // Profit column
+                    Expanded(
+                      flex: 1,
+                      child: marketDataAsync.when(
+                        data: (marketData) {
+                          final profit =
+                              trade.calculateProfit(marketData.lastPrice);
+                          final isProfit = profit >= 0;
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                isProfit
+                                    ? '+\$${profit.toStringAsFixed(2)}'
+                                    : '-\$${(-profit).toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: isProfit ? Colors.green : Colors.red,
+                                  fontSize: 15,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                        loading: () => const Center(
+                          child: SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                        error: (_, __) => const Text(
+                          'Error',
+                          style: TextStyle(color: Colors.red),
                         ),
                       ),
+                    ),
+                    // Menu button
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert),
+                      onSelected: (value) {
+                        if (value == 'close') {
+                          _showCloseTradeDialog(context, trade, ref);
+                        } else if (value == 'modify') {
+                          _showModifyTradeDialog(context, trade, ref);
+                        } else if (value == 'partial') {
+                          _showPartialCloseDialog(context, trade, ref);
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem<String>(
+                          value: 'close',
+                          child: ListTile(
+                            leading: Icon(Icons.close),
+                            title: Text('Close Position'),
+                            contentPadding: EdgeInsets.zero,
+                            dense: true,
+                          ),
+                        ),
+                        const PopupMenuItem<String>(
+                          value: 'modify',
+                          child: ListTile(
+                            leading: Icon(Icons.edit),
+                            title: Text('Modify SL/TP'),
+                            contentPadding: EdgeInsets.zero,
+                            dense: true,
+                          ),
+                        ),
+                        const PopupMenuItem<String>(
+                          value: 'partial',
+                          child: ListTile(
+                            leading: Icon(Icons.content_cut),
+                            title: Text('Partial Close'),
+                            contentPadding: EdgeInsets.zero,
+                            dense: true,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-                if (isOpenTrade)
-                  Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit, size: 18),
-                        onPressed: () =>
-                            _showModifyTradeDialog(context, trade, ref),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        tooltip: 'Modify SL/TP',
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        icon: const Icon(Icons.close, size: 18),
-                        onPressed: () =>
-                            _showCloseTradeDialog(context, trade, ref),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        tooltip: 'Close position',
-                      ),
-                    ],
-                  ),
-              ],
-            ),
+              ),
 
-            const SizedBox(height: 12),
-
-            // Trade details
-            Row(
-              children: [
-                Expanded(
-                  child: _buildDetailItem(
-                    context,
-                    'Volume',
-                    '${trade.volume.toStringAsFixed(2)} lot',
-                  ),
-                ),
-                Expanded(
-                  child: _buildDetailItem(
-                    context,
-                    'Leverage',
-                    '${trade.leverage.toStringAsFixed(0)}x',
-                  ),
-                ),
-                Expanded(
-                  child: _buildDetailItem(
-                    context,
-                    'Entry Price',
-                    '\$${trade.entryPrice.toStringAsFixed(2)}',
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 8),
-
-            // Second row of details
-            Row(
-              children: [
-                Expanded(
-                  child: _buildDetailItem(
-                    context,
-                    isOpenTrade ? 'Open Time' : 'Opened',
-                    openDate,
-                  ),
-                ),
-                Expanded(
-                  child: _buildDetailItem(
-                    context,
-                    isOpenTrade ? 'SL/TP' : 'Closed',
-                    isOpenTrade
-                        ? '${trade.stopLoss != null ? '\$${trade.stopLoss!.toStringAsFixed(2)}' : '-'}/${trade.takeProfit != null ? '\$${trade.takeProfit!.toStringAsFixed(2)}' : '-'}'
-                        : closeDate,
-                  ),
-                ),
-                Expanded(
+              // Expanded details section (visible when tapped)
+              if (isExpanded)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  color: theme.colorScheme.surface.withOpacity(0.7),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        isOpenTrade ? 'Current P/L' : 'Profit/Loss',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurface.withOpacity(0.7),
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildDetailItem(
+                              context,
+                              'Open Time',
+                              openDate,
+                            ),
+                          ),
+                          Expanded(
+                            child: _buildDetailItem(
+                              context,
+                              'ID',
+                              '#${trade.id.toString().padLeft(10, '0')}',
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 4),
-                      profitLossWidget,
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildDetailItem(
+                              context,
+                              'SL',
+                              trade.stopLoss != null
+                                  ? trade.stopLoss!.toStringAsFixed(5)
+                                  : '—',
+                            ),
+                          ),
+                          Expanded(
+                            child: _buildDetailItem(
+                              context,
+                              'TP',
+                              trade.takeProfit != null
+                                  ? trade.takeProfit!.toStringAsFixed(5)
+                                  : '—',
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
-              ],
-            ),
-
-            // Show exit price for closed trades
-            if (!isOpenTrade) ...[
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildDetailItem(
-                      context,
-                      'Exit Price',
-                      trade.exitPrice != null
-                          ? '\$${trade.exitPrice!.toStringAsFixed(2)}'
-                          : '-',
-                    ),
-                  ),
-                  const Expanded(child: SizedBox()),
-                  const Expanded(child: SizedBox()),
-                ],
-              ),
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -747,216 +1093,437 @@ class TradePage extends ConsumerWidget {
     });
   }
 
-  Widget _buildPendingOrdersList(
-      BuildContext context, List<Trade> pendingTrades, WidgetRef ref) {
-    return RefreshIndicator(
-      onRefresh: () async {
-        // Refresh trades
-        ref.refresh(tradesProvider);
-      },
-      child: pendingTrades.isEmpty
-          ? _buildEmptyState(
-              context,
-              'No Pending Orders',
-              'Your pending orders will appear here',
-            )
-          : ListView.builder(
-              itemCount: pendingTrades.length,
-              itemBuilder: (context, index) {
-                final trade = pendingTrades[index];
-                return _buildPendingOrderCard(context, trade, ref);
-              },
-            ),
-    );
-  }
-
-  Widget _buildPendingOrderCard(
+  void _showPartialCloseDialog(
       BuildContext context, Trade trade, WidgetRef ref) {
     final theme = Theme.of(context);
-    final openDate = DateFormat('MMM dd, HH:mm').format(trade.openTime);
+    final tradeService = ref.read(tradeServiceProvider);
+    final volumeController = TextEditingController(
+      text: (trade.volume / 2).toStringAsFixed(2),
+    );
+
+    // Store a reference to the ScaffoldMessengerState to avoid using context after widget disposal
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+
+    // Get current price for calculating profit
+    final marketDataAsync = ref.read(marketDataProvider(trade.symbolCode));
+
+    marketDataAsync.whenData((marketData) {
+      final currentPrice = marketData.lastPrice;
+
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Partial Close ${trade.symbolCode}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Enter the volume to close:',
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: volumeController,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+                ],
+                decoration: InputDecoration(
+                  labelText: 'Volume (Max: ${trade.volume.toStringAsFixed(2)})',
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Current Price:'),
+                  Text('\$${currentPrice.toStringAsFixed(5)}'),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final volumeToClose = double.tryParse(volumeController.text);
+
+                if (volumeToClose == null ||
+                    volumeToClose <= 0 ||
+                    volumeToClose > trade.volume) {
+                  scaffoldMessenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('Please enter a valid volume'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
+
+                Navigator.of(context).pop();
+
+                // Show loading
+                scaffoldMessenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Processing partial close...'),
+                    duration: Duration(seconds: 1),
+                  ),
+                );
+
+                try {
+                  // Close part of the trade - implementation would depend on your backend
+                  await tradeService.partialCloseTrade(
+                    tradeId: trade.id,
+                    exitPrice: currentPrice,
+                    volumeToClose: volumeToClose,
+                  );
+
+                  // Show success message
+                  scaffoldMessenger.showSnackBar(
+                    SnackBar(
+                      content: Text('Position partially closed successfully'),
+                      backgroundColor: theme.colorScheme.primary,
+                    ),
+                  );
+                } catch (e) {
+                  // Show error message
+                  scaffoldMessenger.showSnackBar(
+                    SnackBar(
+                      content: Text('Error: ${e.toString()}'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: theme.colorScheme.primary,
+                foregroundColor: Colors.white,
+              ),
+              child: Text('Partial Close'),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+}
+
+class MetaTraderStylePendingOrderCard extends ConsumerStatefulWidget {
+  final Trade trade;
+
+  const MetaTraderStylePendingOrderCard({
+    Key? key,
+    required this.trade,
+  }) : super(key: key);
+
+  @override
+  ConsumerState<MetaTraderStylePendingOrderCard> createState() =>
+      _MetaTraderStylePendingOrderCardState();
+}
+
+class _MetaTraderStylePendingOrderCardState
+    extends ConsumerState<MetaTraderStylePendingOrderCard> {
+  bool isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final trade = widget.trade;
+
+    // Format dates
+    final dateFormat = DateFormat('yyyy.MM.dd HH:mm:ss');
+    final openDate = dateFormat.format(trade.openTime);
+
+    // Get current price
+    final marketDataAsync = ref.watch(marketDataProvider(trade.symbolCode));
 
     // Determine order type text
     String orderTypeText = '';
     switch (trade.orderType) {
       case OrderType.limit:
         orderTypeText =
-            trade.type == TradeType.buy ? 'Buy Limit' : 'Sell Limit';
+            trade.type == TradeType.buy ? 'buy limit' : 'sell limit';
         break;
       case OrderType.stopLimit:
-        orderTypeText =
-            trade.type == TradeType.buy ? 'Buy Stop Limit' : 'Sell Stop Limit';
+        orderTypeText = trade.type == TradeType.buy ? 'buy stop' : 'sell stop';
         break;
       default:
-        orderTypeText = trade.type == TradeType.buy ? 'Buy' : 'Sell';
+        orderTypeText = trade.type == TradeType.buy ? 'buy' : 'sell';
     }
 
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      margin: const EdgeInsets.only(bottom: 4),
+      elevation: 1,
       child: InkWell(
         onTap: () {
-          // Show cancel dialog
-          _showCancelOrderDialog(context, trade, ref);
+          setState(() {
+            isExpanded = !isExpanded;
+          });
         },
-        child: Padding(
-          padding: const EdgeInsets.all(12.0),
+        child: Container(
+          color: theme.colorScheme.surface,
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header row
-              Row(
-                children: [
-                  // Symbol and type
-                  Expanded(
-                    flex: 2,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          trade.symbolCode,
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          orderTypeText,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: trade.type == TradeType.buy
-                                ? Colors.green
-                                : Colors.red,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
+              // Main row that's always visible
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  border: Border(
+                    left: BorderSide(
+                      color: trade.type == TradeType.buy
+                          ? Colors.amber.shade700
+                          : Colors.purple.shade700,
+                      width: 4,
                     ),
                   ),
+                ),
+                child: Row(
+                  children: [
+                    // Symbol and type column
+                    Expanded(
+                      flex: 2,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                trade.symbolCode,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                orderTypeText,
+                                style: TextStyle(
+                                  color: trade.type == TradeType.buy
+                                      ? Colors.amber.shade700
+                                      : Colors.purple.shade700,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                trade.volume.toStringAsFixed(2),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Price:',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                    Text(
+                                      trade.orderType == OrderType.limit
+                                          ? trade.limitPrice
+                                                  ?.toStringAsFixed(5) ??
+                                              '-'
+                                          : trade.stopPrice
+                                                  ?.toStringAsFixed(5) ??
+                                              '-',
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Current:',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                    marketDataAsync.when(
+                                      data: (marketData) => Text(
+                                        marketData.lastPrice.toStringAsFixed(5),
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      loading: () => const Text('...',
+                                          style: TextStyle(fontSize: 13)),
+                                      error: (_, __) => const Text('Error',
+                                          style: TextStyle(
+                                              fontSize: 13, color: Colors.red)),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
 
-                  // Cancel button
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () {
-                      _showCancelOrderDialog(context, trade, ref);
-                    },
-                    tooltip: 'Cancel Order',
-                    color: theme.colorScheme.error,
-                  ),
-                ],
+                    // Date column
+                    Expanded(
+                      flex: 1,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            DateFormat('MM/dd HH:mm').format(trade.openTime),
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Cancel button
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: () =>
+                          _showCancelOrderDialog(context, trade, ref),
+                      tooltip: 'Cancel order',
+                    ),
+                  ],
+                ),
               ),
 
-              const SizedBox(height: 12),
-
-              // Order details
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildDetailItem(
-                      context,
-                      'Volume',
-                      '${trade.volume.toStringAsFixed(2)} lot',
-                    ),
-                  ),
-                  Expanded(
-                    child: _buildDetailItem(
-                      context,
-                      'Leverage',
-                      '${trade.leverage.toStringAsFixed(0)}x',
-                    ),
-                  ),
-                  Expanded(
-                    child: _buildDetailItem(
-                      context,
-                      'Current Price',
-                      ref.watch(marketDataProvider(trade.symbolCode)).when(
-                            data: (data) =>
-                                '\$${data.lastPrice.toStringAsFixed(2)}',
-                            loading: () => 'Loading...',
-                            error: (_, __) => 'Error',
+              // Expanded details section (visible when tapped)
+              if (isExpanded)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  color: theme.colorScheme.surface.withOpacity(0.7),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildDetailItem(
+                              context,
+                              'Order ID',
+                              '#${trade.id.toString().padLeft(10, '0')}',
+                            ),
                           ),
-                    ),
+                          Expanded(
+                            child: _buildDetailItem(
+                              context,
+                              'Created',
+                              openDate,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          if (trade.orderType == OrderType.stopLimit)
+                            Expanded(
+                              child: _buildDetailItem(
+                                context,
+                                'Stop Price',
+                                trade.stopPrice != null
+                                    ? trade.stopPrice!.toStringAsFixed(5)
+                                    : '—',
+                              ),
+                            ),
+                          Expanded(
+                            child: _buildDetailItem(
+                              context,
+                              'Limit Price',
+                              trade.limitPrice != null
+                                  ? trade.limitPrice!.toStringAsFixed(5)
+                                  : '—',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildDetailItem(
+                              context,
+                              'SL',
+                              trade.stopLoss != null
+                                  ? trade.stopLoss!.toStringAsFixed(5)
+                                  : '—',
+                            ),
+                          ),
+                          Expanded(
+                            child: _buildDetailItem(
+                              context,
+                              'TP',
+                              trade.takeProfit != null
+                                  ? trade.takeProfit!.toStringAsFixed(5)
+                                  : '—',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                ],
-              ),
-
-              const SizedBox(height: 8),
-
-              // Price details based on order type
-              if (trade.orderType == OrderType.limit) ...[
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildDetailItem(
-                        context,
-                        'Limit Price',
-                        trade.limitPrice != null
-                            ? '\$${trade.limitPrice!.toStringAsFixed(2)}'
-                            : '-',
-                      ),
-                    ),
-                    Expanded(
-                      child: _buildDetailItem(
-                        context,
-                        'Created',
-                        openDate,
-                      ),
-                    ),
-                    Expanded(
-                      child: _buildDetailItem(
-                        context,
-                        'SL/TP',
-                        '${trade.stopLoss != null ? '\$${trade.stopLoss!.toStringAsFixed(2)}' : '-'}/${trade.takeProfit != null ? '\$${trade.takeProfit!.toStringAsFixed(2)}' : '-'}',
-                      ),
-                    ),
-                  ],
                 ),
-              ] else if (trade.orderType == OrderType.stopLimit) ...[
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildDetailItem(
-                        context,
-                        'Stop Price',
-                        trade.stopPrice != null
-                            ? '\$${trade.stopPrice!.toStringAsFixed(2)}'
-                            : '-',
-                      ),
-                    ),
-                    Expanded(
-                      child: _buildDetailItem(
-                        context,
-                        'Limit Price',
-                        trade.limitPrice != null
-                            ? '\$${trade.limitPrice!.toStringAsFixed(2)}'
-                            : '-',
-                      ),
-                    ),
-                    Expanded(
-                      child: _buildDetailItem(
-                        context,
-                        'Created',
-                        openDate,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildDetailItem(
-                        context,
-                        'SL/TP',
-                        '${trade.stopLoss != null ? '\$${trade.stopLoss!.toStringAsFixed(2)}' : '-'}/${trade.takeProfit != null ? '\$${trade.takeProfit!.toStringAsFixed(2)}' : '-'}',
-                      ),
-                    ),
-                    const Expanded(child: SizedBox()),
-                    const Expanded(child: SizedBox()),
-                  ],
-                ),
-              ],
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildDetailItem(
+    BuildContext context,
+    String label,
+    String value, {
+    Color? valueColor,
+  }) {
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurface.withOpacity(0.7),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w500,
+            color: valueColor,
+          ),
+        ),
+      ],
     );
   }
 
@@ -1017,6 +1584,291 @@ class TradePage extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class MetaTraderStyleHistoryCard extends ConsumerStatefulWidget {
+  final Trade trade;
+
+  const MetaTraderStyleHistoryCard({
+    Key? key,
+    required this.trade,
+  }) : super(key: key);
+
+  @override
+  ConsumerState<MetaTraderStyleHistoryCard> createState() =>
+      _MetaTraderStyleHistoryCardState();
+}
+
+class _MetaTraderStyleHistoryCardState
+    extends ConsumerState<MetaTraderStyleHistoryCard> {
+  bool isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final trade = widget.trade;
+
+    // Format dates
+    final dateFormat = DateFormat('yyyy.MM.dd HH:mm:ss');
+    final openDate = dateFormat.format(trade.openTime);
+    final closeDate =
+        trade.closeTime != null ? dateFormat.format(trade.closeTime!) : '—';
+
+    // Calculate profit/loss
+    final isProfitable = trade.profit != null ? trade.profit! >= 0 : false;
+    final profitColor = isProfitable ? Colors.green : Colors.red;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 4),
+      elevation: 1,
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            isExpanded = !isExpanded;
+          });
+        },
+        child: Container(
+          color: theme.colorScheme.surface,
+          child: Column(
+            children: [
+              // Main row that's always visible
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  border: Border(
+                    left: BorderSide(
+                      color: isProfitable ? Colors.green : Colors.red,
+                      width: 4,
+                    ),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    // Symbol and type column
+                    Expanded(
+                      flex: 2,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                trade.symbolCode,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                trade.type == TradeType.buy ? 'buy' : 'sell',
+                                style: TextStyle(
+                                  color: trade.type == TradeType.buy
+                                      ? theme.colorScheme.primary
+                                      : Colors.red,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                trade.volume.toStringAsFixed(2),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Text(
+                                '${trade.entryPrice.toStringAsFixed(5)} → ',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                              trade.exitPrice != null
+                                  ? Text(
+                                      trade.exitPrice!.toStringAsFixed(5),
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                      ),
+                                    )
+                                  : const Text('—',
+                                      style: TextStyle(fontSize: 13)),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Profit column
+                    Expanded(
+                      flex: 1,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          trade.profit != null
+                              ? Text(
+                                  isProfitable
+                                      ? '+\$${trade.profit!.toStringAsFixed(2)}'
+                                      : '-\$${(-trade.profit!).toStringAsFixed(2)}',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: profitColor,
+                                    fontSize: 15,
+                                  ),
+                                )
+                              : const Text(
+                                  '—',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                          const SizedBox(height: 4),
+                          Text(
+                            DateFormat('MM/dd HH:mm')
+                                .format(trade.closeTime ?? trade.openTime),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Expanded details section (visible when tapped)
+              if (isExpanded)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  color: theme.colorScheme.surface.withOpacity(0.7),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildDetailItem(
+                              context,
+                              'Trade ID',
+                              '#${trade.id.toString().padLeft(10, '0')}',
+                            ),
+                          ),
+                          Expanded(
+                            child: _buildDetailItem(
+                              context,
+                              'Open Time',
+                              openDate,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildDetailItem(
+                              context,
+                              'Close Time',
+                              closeDate,
+                            ),
+                          ),
+                          Expanded(
+                            child: _buildDetailItem(
+                              context,
+                              'Duration',
+                              _calculateDuration(
+                                  trade.openTime, trade.closeTime),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (trade.stopLoss != null || trade.takeProfit != null)
+                        const SizedBox(height: 8),
+                      if (trade.stopLoss != null || trade.takeProfit != null)
+                        Row(
+                          children: [
+                            if (trade.stopLoss != null)
+                              Expanded(
+                                child: _buildDetailItem(
+                                  context,
+                                  'SL',
+                                  trade.stopLoss!.toStringAsFixed(5),
+                                ),
+                              ),
+                            if (trade.takeProfit != null)
+                              Expanded(
+                                child: _buildDetailItem(
+                                  context,
+                                  'TP',
+                                  trade.takeProfit!.toStringAsFixed(5),
+                                ),
+                              ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _calculateDuration(DateTime openTime, DateTime? closeTime) {
+    if (closeTime == null) return '—';
+
+    final duration = closeTime.difference(openTime);
+
+    if (duration.inDays > 0) {
+      return '${duration.inDays}d ${duration.inHours % 24}h';
+    } else if (duration.inHours > 0) {
+      return '${duration.inHours}h ${duration.inMinutes % 60}m';
+    } else if (duration.inMinutes > 0) {
+      return '${duration.inMinutes}m ${duration.inSeconds % 60}s';
+    } else {
+      return '${duration.inSeconds}s';
+    }
+  }
+
+  Widget _buildDetailItem(
+    BuildContext context,
+    String label,
+    String value, {
+    Color? valueColor,
+  }) {
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurface.withOpacity(0.7),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w500,
+            color: valueColor,
+          ),
+        ),
+      ],
     );
   }
 }
