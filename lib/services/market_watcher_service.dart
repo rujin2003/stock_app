@@ -97,12 +97,18 @@ class MarketWatcherService {
 
     // Check if any trades need to be closed based on this price
     _tradeService.checkAndProcessTrades(symbol, price);
+
+    // Check if any pending orders need to be activated
+    _tradeService.checkAndActivatePendingOrders(symbol, price);
   }
 
   Future<void> _checkAllTrades() async {
     // Check all symbols we have prices for
     for (final entry in _lastPrices.entries) {
       await _tradeService.checkAndProcessTrades(entry.key, entry.value);
+
+      // Also check for pending orders that need to be activated
+      await _tradeService.checkAndActivatePendingOrders(entry.key, entry.value);
     }
   }
 }

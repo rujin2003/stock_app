@@ -61,7 +61,11 @@ class MarketDataTile extends ConsumerWidget {
 
             // Reset price changed flag after animation
             Future.delayed(const Duration(milliseconds: 1000), () {
-              ref.read(priceChangeProvider(symbol.code).notifier).state = false;
+              // Check if the widget is still mounted before using ref
+              if (context.mounted) {
+                ref.read(priceChangeProvider(symbol.code).notifier).state =
+                    false;
+              }
             });
           }
         },

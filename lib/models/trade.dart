@@ -5,6 +5,12 @@ enum TradeType {
   sell,
 }
 
+enum OrderType {
+  market,
+  limit,
+  stopLimit,
+}
+
 enum TradeStatus {
   open,
   closed,
@@ -16,12 +22,16 @@ class Trade {
   final String symbolCode;
   final String symbolName;
   final TradeType type;
+  final OrderType orderType;
   final double entryPrice;
+  final double? limitPrice; // For limit and stop limit orders
+  final double? stopPrice; // For stop limit orders
   final double? exitPrice;
   final double volume; // Lot size
   final double leverage;
   final double? stopLoss;
   final double? takeProfit;
+  final double? trailingStopLoss; // Distance in points/pips
   final DateTime openTime;
   final DateTime? closeTime;
   final TradeStatus status;
@@ -33,12 +43,16 @@ class Trade {
     required this.symbolCode,
     required this.symbolName,
     required this.type,
+    this.orderType = OrderType.market,
     required this.entryPrice,
+    this.limitPrice,
+    this.stopPrice,
     this.exitPrice,
     required this.volume,
     required this.leverage,
     this.stopLoss,
     this.takeProfit,
+    this.trailingStopLoss,
     required this.openTime,
     this.closeTime,
     required this.status,
@@ -67,12 +81,16 @@ class Trade {
     String? symbolCode,
     String? symbolName,
     TradeType? type,
+    OrderType? orderType,
     double? entryPrice,
+    double? limitPrice,
+    double? stopPrice,
     double? exitPrice,
     double? volume,
     double? leverage,
     double? stopLoss,
     double? takeProfit,
+    double? trailingStopLoss,
     DateTime? openTime,
     DateTime? closeTime,
     TradeStatus? status,
@@ -84,12 +102,16 @@ class Trade {
       symbolCode: symbolCode ?? this.symbolCode,
       symbolName: symbolName ?? this.symbolName,
       type: type ?? this.type,
+      orderType: orderType ?? this.orderType,
       entryPrice: entryPrice ?? this.entryPrice,
+      limitPrice: limitPrice ?? this.limitPrice,
+      stopPrice: stopPrice ?? this.stopPrice,
       exitPrice: exitPrice ?? this.exitPrice,
       volume: volume ?? this.volume,
       leverage: leverage ?? this.leverage,
       stopLoss: stopLoss ?? this.stopLoss,
       takeProfit: takeProfit ?? this.takeProfit,
+      trailingStopLoss: trailingStopLoss ?? this.trailingStopLoss,
       openTime: openTime ?? this.openTime,
       closeTime: closeTime ?? this.closeTime,
       status: status ?? this.status,
@@ -105,12 +127,16 @@ class Trade {
       'symbol_code': symbolCode,
       'symbol_name': symbolName,
       'type': type.toString().split('.').last,
+      'order_type': orderType.toString().split('.').last,
       'entry_price': entryPrice,
+      'limit_price': limitPrice,
+      'stop_price': stopPrice,
       'exit_price': exitPrice,
       'volume': volume,
       'leverage': leverage,
       'stop_loss': stopLoss,
       'take_profit': takeProfit,
+      'trailing_stop_loss': trailingStopLoss,
       'open_time': openTime.toIso8601String(),
       'close_time': closeTime?.toIso8601String(),
       'status': status.toString().split('.').last,
@@ -128,12 +154,20 @@ class Trade {
       type: TradeType.values.firstWhere(
         (e) => e.toString().split('.').last == json['type'],
       ),
+      orderType: json['order_type'] != null
+          ? OrderType.values.firstWhere(
+              (e) => e.toString().split('.').last == json['order_type'],
+            )
+          : OrderType.market,
       entryPrice: json['entry_price'].toDouble(),
+      limitPrice: json['limit_price']?.toDouble(),
+      stopPrice: json['stop_price']?.toDouble(),
       exitPrice: json['exit_price']?.toDouble(),
       volume: json['volume'].toDouble(),
       leverage: json['leverage'].toDouble(),
       stopLoss: json['stop_loss']?.toDouble(),
       takeProfit: json['take_profit']?.toDouble(),
+      trailingStopLoss: json['trailing_stop_loss']?.toDouble(),
       openTime: DateTime.parse(json['open_time']),
       closeTime: json['close_time'] != null
           ? DateTime.parse(json['close_time'])

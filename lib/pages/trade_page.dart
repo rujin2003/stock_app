@@ -17,13 +17,14 @@ class TradePage extends ConsumerWidget {
     final tradesAsync = ref.watch(tradesProvider);
 
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           toolbarHeight: 0,
           bottom: TabBar(
             tabs: const [
               Tab(text: 'Open Positions'),
+              Tab(text: 'Pending Orders'),
               Tab(text: 'Trade History'),
             ],
             labelColor: theme.colorScheme.primary,
@@ -48,6 +49,29 @@ class TradePage extends ConsumerWidget {
                 }
 
                 return _buildTradesList(context, openTrades, true, ref);
+              },
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (error, _) => Center(
+                child: Text('Error: ${error.toString()}'),
+              ),
+            ),
+
+            // Pending Orders Tab
+            tradesAsync.when(
+              data: (trades) {
+                final pendingTrades = trades
+                    .where((t) => t.status == TradeStatus.pending)
+                    .toList();
+
+                if (pendingTrades.isEmpty) {
+                  return _buildEmptyState(
+                    context,
+                    'No Pending Orders',
+                    'Your limit and stop limit orders will appear here',
+                  );
+                }
+
+                return _buildPendingOrdersList(context, pendingTrades, ref);
               },
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (error, _) => Center(
@@ -721,5 +745,278 @@ class TradePage extends ConsumerWidget {
         ),
       );
     });
+  }
+
+  Widget _buildPendingOrdersList(
+      BuildContext context, List<Trade> pendingTrades, WidgetRef ref) {
+    return RefreshIndicator(
+      onRefresh: () async {
+        // Refresh trades
+        ref.refresh(tradesProvider);
+      },
+      child: pendingTrades.isEmpty
+          ? _buildEmptyState(
+              context,
+              'No Pending Orders',
+              'Your pending orders will appear here',
+            )
+          : ListView.builder(
+              itemCount: pendingTrades.length,
+              itemBuilder: (context, index) {
+                final trade = pendingTrades[index];
+                return _buildPendingOrderCard(context, trade, ref);
+              },
+            ),
+    );
+  }
+
+  Widget _buildPendingOrderCard(
+      BuildContext context, Trade trade, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final openDate = DateFormat('MMM dd, HH:mm').format(trade.openTime);
+
+    // Determine order type text
+    String orderTypeText = '';
+    switch (trade.orderType) {
+      case OrderType.limit:
+        orderTypeText =
+            trade.type == TradeType.buy ? 'Buy Limit' : 'Sell Limit';
+        break;
+      case OrderType.stopLimit:
+        orderTypeText =
+            trade.type == TradeType.buy ? 'Buy Stop Limit' : 'Sell Stop Limit';
+        break;
+      default:
+        orderTypeText = trade.type == TradeType.buy ? 'Buy' : 'Sell';
+    }
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: InkWell(
+        onTap: () {
+          // Show cancel dialog
+          _showCancelOrderDialog(context, trade, ref);
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header row
+              Row(
+                children: [
+                  // Symbol and type
+                  Expanded(
+                    flex: 2,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          trade.symbolCode,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          orderTypeText,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: trade.type == TradeType.buy
+                                ? Colors.green
+                                : Colors.red,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Cancel button
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () {
+                      _showCancelOrderDialog(context, trade, ref);
+                    },
+                    tooltip: 'Cancel Order',
+                    color: theme.colorScheme.error,
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 12),
+
+              // Order details
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildDetailItem(
+                      context,
+                      'Volume',
+                      '${trade.volume.toStringAsFixed(2)} lot',
+                    ),
+                  ),
+                  Expanded(
+                    child: _buildDetailItem(
+                      context,
+                      'Leverage',
+                      '${trade.leverage.toStringAsFixed(0)}x',
+                    ),
+                  ),
+                  Expanded(
+                    child: _buildDetailItem(
+                      context,
+                      'Current Price',
+                      ref.watch(marketDataProvider(trade.symbolCode)).when(
+                            data: (data) =>
+                                '\$${data.lastPrice.toStringAsFixed(2)}',
+                            loading: () => 'Loading...',
+                            error: (_, __) => 'Error',
+                          ),
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 8),
+
+              // Price details based on order type
+              if (trade.orderType == OrderType.limit) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildDetailItem(
+                        context,
+                        'Limit Price',
+                        trade.limitPrice != null
+                            ? '\$${trade.limitPrice!.toStringAsFixed(2)}'
+                            : '-',
+                      ),
+                    ),
+                    Expanded(
+                      child: _buildDetailItem(
+                        context,
+                        'Created',
+                        openDate,
+                      ),
+                    ),
+                    Expanded(
+                      child: _buildDetailItem(
+                        context,
+                        'SL/TP',
+                        '${trade.stopLoss != null ? '\$${trade.stopLoss!.toStringAsFixed(2)}' : '-'}/${trade.takeProfit != null ? '\$${trade.takeProfit!.toStringAsFixed(2)}' : '-'}',
+                      ),
+                    ),
+                  ],
+                ),
+              ] else if (trade.orderType == OrderType.stopLimit) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildDetailItem(
+                        context,
+                        'Stop Price',
+                        trade.stopPrice != null
+                            ? '\$${trade.stopPrice!.toStringAsFixed(2)}'
+                            : '-',
+                      ),
+                    ),
+                    Expanded(
+                      child: _buildDetailItem(
+                        context,
+                        'Limit Price',
+                        trade.limitPrice != null
+                            ? '\$${trade.limitPrice!.toStringAsFixed(2)}'
+                            : '-',
+                      ),
+                    ),
+                    Expanded(
+                      child: _buildDetailItem(
+                        context,
+                        'Created',
+                        openDate,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildDetailItem(
+                        context,
+                        'SL/TP',
+                        '${trade.stopLoss != null ? '\$${trade.stopLoss!.toStringAsFixed(2)}' : '-'}/${trade.takeProfit != null ? '\$${trade.takeProfit!.toStringAsFixed(2)}' : '-'}',
+                      ),
+                    ),
+                    const Expanded(child: SizedBox()),
+                    const Expanded(child: SizedBox()),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showCancelOrderDialog(
+      BuildContext context, Trade trade, WidgetRef ref) {
+    final theme = Theme.of(context);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Cancel Order'),
+        content: Text(
+            'Are you sure you want to cancel this ${trade.type == TradeType.buy ? 'buy' : 'sell'} order for ${trade.symbolCode}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('No'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+
+              // Capture ScaffoldMessenger before async operation
+              final scaffoldMessenger = ScaffoldMessenger.of(context);
+
+              try {
+                // Show loading indicator
+                scaffoldMessenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Cancelling order...'),
+                    duration: Duration(seconds: 1),
+                  ),
+                );
+
+                // Cancel the order
+                await ref.read(tradeServiceProvider).cancelOrder(trade.id);
+
+                // Show success message
+                scaffoldMessenger.showSnackBar(
+                  SnackBar(
+                    content: Text('Order cancelled successfully'),
+                    backgroundColor: theme.colorScheme.primary,
+                  ),
+                );
+              } catch (e) {
+                // Show error message
+                if (context.mounted) {
+                  scaffoldMessenger.showSnackBar(
+                    SnackBar(
+                      content: Text('Error: ${e.toString()}'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+            child: Text('Yes'),
+          ),
+        ],
+      ),
+    );
   }
 }

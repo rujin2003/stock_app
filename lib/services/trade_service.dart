@@ -18,24 +18,36 @@ class TradeService {
     required double entryPrice,
     required double volume,
     required double leverage,
+    OrderType orderType = OrderType.market,
+    double? limitPrice,
+    double? stopPrice,
     double? stopLoss,
     double? takeProfit,
+    double? trailingStopLoss,
   }) async {
     final userId = _supabase.auth.currentUser!.id;
     final now = DateTime.now();
+
+    // Determine trade status based on order type
+    final status =
+        orderType == OrderType.market ? TradeStatus.open : TradeStatus.pending;
 
     final trade = Trade(
       id: _uuid.v4(),
       symbolCode: symbolCode,
       symbolName: symbolName,
       type: type,
+      orderType: orderType,
       entryPrice: entryPrice,
+      limitPrice: limitPrice,
+      stopPrice: stopPrice,
       volume: volume,
       leverage: leverage,
       stopLoss: stopLoss,
       takeProfit: takeProfit,
+      trailingStopLoss: trailingStopLoss,
       openTime: now,
-      status: TradeStatus.open,
+      status: status,
       userId: userId,
     );
 
@@ -169,6 +181,7 @@ class TradeService {
     required String tradeId,
     double? stopLoss,
     double? takeProfit,
+    double? trailingStopLoss,
   }) async {
     final updateData = <String, dynamic>{};
 
@@ -180,6 +193,10 @@ class TradeService {
       updateData['take_profit'] = takeProfit;
     }
 
+    if (trailingStopLoss != null) {
+      updateData['trailing_stop_loss'] = trailingStopLoss;
+    }
+
     final response = await _supabase
         .from('trades')
         .update(updateData)
@@ -188,6 +205,29 @@ class TradeService {
         .single();
 
     return Trade.fromJson(response);
+  }
+
+  // Cancel a pending order
+  Future<void> cancelOrder(String orderId) async {
+    // First, check if the order exists and is pending
+    final response = await _supabase
+        .from('trades')
+        .select()
+        .eq('id', orderId)
+        .eq('status', 'pending')
+        .single();
+
+    final trade = Trade.fromJson(response);
+
+    // Delete the pending order
+    await _supabase
+        .from('trades')
+        .delete()
+        .eq('id', orderId)
+        .eq('status', 'pending');
+
+    // Update account metrics after cancelling an order
+    await _accountService.updateAccountMetrics();
   }
 
   // Check if any open trades need to be closed based on current price
@@ -269,6 +309,76 @@ class TradeService {
       }
     } catch (e) {
       print('Error fetching open trades for $symbolCode: $e');
+    }
+  }
+
+  // Check if any pending orders need to be activated based on current price
+  Future<void> checkAndActivatePendingOrders(
+      String symbolCode, double currentPrice) async {
+    final userId = _supabase.auth.currentUser!.id;
+
+    print('Checking pending orders for $symbolCode at price $currentPrice');
+
+    try {
+      final pendingOrders = await _supabase
+          .from('trades')
+          .select()
+          .eq('user_id', userId)
+          .eq('symbol_code', symbolCode)
+          .eq('status', 'pending');
+
+      print('Found ${pendingOrders.length} pending orders for $symbolCode');
+
+      for (final orderJson in pendingOrders) {
+        try {
+          final order = Trade.fromJson(orderJson);
+          print(
+              'Checking order ${order.id}: Type=${order.type}, OrderType=${order.orderType}');
+
+          bool shouldActivate = false;
+
+          // Check if the order should be activated based on its type
+          if (order.orderType == OrderType.limit) {
+            // Buy Limit: Activate when price falls to or below limit price
+            // Sell Limit: Activate when price rises to or above limit price
+            if (order.limitPrice != null) {
+              shouldActivate = order.type == TradeType.buy
+                  ? currentPrice <= order.limitPrice!
+                  : currentPrice >= order.limitPrice!;
+            }
+          } else if (order.orderType == OrderType.stopLimit) {
+            // Buy Stop Limit: Activate when price rises to or above stop price
+            // Sell Stop Limit: Activate when price falls to or below stop price
+            if (order.stopPrice != null) {
+              shouldActivate = order.type == TradeType.buy
+                  ? currentPrice >= order.stopPrice!
+                  : currentPrice <= order.stopPrice!;
+            }
+          }
+
+          if (shouldActivate) {
+            print('Activating order ${order.id}');
+
+            // Update the order to open status
+            await _supabase.from('trades').update({
+              'status': 'open',
+              'entry_price': order.orderType == OrderType.stopLimit &&
+                      order.limitPrice != null
+                  ? order.limitPrice // Use limit price for stop limit orders
+                  : currentPrice, // Use current price for limit orders
+            }).eq('id', order.id);
+
+            // Update account metrics after activating an order
+            await _accountService.updateAccountMetrics();
+
+            print('Successfully activated order ${order.id}');
+          }
+        } catch (orderError) {
+          print('Error processing pending order: $orderError');
+        }
+      }
+    } catch (e) {
+      print('Error fetching pending orders for $symbolCode: $e');
     }
   }
 }

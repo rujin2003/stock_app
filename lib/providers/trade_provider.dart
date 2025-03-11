@@ -29,30 +29,46 @@ final tradeFormProvider =
 class TradeForm {
   final double volume;
   final double leverage;
+  final OrderType orderType;
+  final double? limitPrice;
+  final double? stopPrice;
   final double? stopLoss;
   final double? takeProfit;
+  final double? trailingStopLoss;
   final bool isAdvancedMode;
 
   TradeForm({
     this.volume = 0.01,
-    this.leverage = 1.0,
+    this.leverage = 25.0,
+    this.orderType = OrderType.market,
+    this.limitPrice,
+    this.stopPrice,
     this.stopLoss,
     this.takeProfit,
+    this.trailingStopLoss,
     this.isAdvancedMode = false,
   });
 
   TradeForm copyWith({
     double? volume,
     double? leverage,
+    OrderType? orderType,
+    double? limitPrice,
+    double? stopPrice,
     double? stopLoss,
     double? takeProfit,
+    double? trailingStopLoss,
     bool? isAdvancedMode,
   }) {
     return TradeForm(
       volume: volume ?? this.volume,
       leverage: leverage ?? this.leverage,
+      orderType: orderType ?? this.orderType,
+      limitPrice: limitPrice ?? this.limitPrice,
+      stopPrice: stopPrice ?? this.stopPrice,
       stopLoss: stopLoss ?? this.stopLoss,
       takeProfit: takeProfit ?? this.takeProfit,
+      trailingStopLoss: trailingStopLoss ?? this.trailingStopLoss,
       isAdvancedMode: isAdvancedMode ?? this.isAdvancedMode,
     );
   }
@@ -70,12 +86,28 @@ class TradeFormNotifier extends StateNotifier<TradeForm> {
     state = state.copyWith(leverage: leverage);
   }
 
+  void setOrderType(OrderType orderType) {
+    state = state.copyWith(orderType: orderType);
+  }
+
+  void setLimitPrice(double? limitPrice) {
+    state = state.copyWith(limitPrice: limitPrice);
+  }
+
+  void setStopPrice(double? stopPrice) {
+    state = state.copyWith(stopPrice: stopPrice);
+  }
+
   void setStopLoss(double? stopLoss) {
     state = state.copyWith(stopLoss: stopLoss);
   }
 
   void setTakeProfit(double? takeProfit) {
     state = state.copyWith(takeProfit: takeProfit);
+  }
+
+  void setTrailingStopLoss(double? trailingStopLoss) {
+    state = state.copyWith(trailingStopLoss: trailingStopLoss);
   }
 
   void toggleAdvancedMode() {
@@ -97,11 +129,15 @@ final createTradeProvider =
     symbolCode: params.symbolCode,
     symbolName: params.symbolName,
     type: params.type,
+    orderType: form.orderType,
     entryPrice: params.currentPrice,
+    limitPrice: form.limitPrice,
+    stopPrice: form.stopPrice,
     volume: form.volume,
     leverage: form.leverage,
     stopLoss: form.stopLoss,
     takeProfit: form.takeProfit,
+    trailingStopLoss: form.trailingStopLoss,
   );
 
   return trade;
