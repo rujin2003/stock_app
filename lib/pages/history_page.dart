@@ -7,7 +7,9 @@ import '../models/trade.dart';
 import '../providers/account_provider.dart';
 import '../providers/trade_provider.dart';
 import '../providers/market_data_provider.dart';
+import '../providers/time_filter_provider.dart';
 import '../widgets/responsive_layout.dart';
+import '../widgets/time_filter_dropdown.dart';
 
 // Provider for total P/L of all open positions (copied from trade_page.dart)
 final totalProfitLossProvider = Provider<AsyncValue<double>>((ref) {
@@ -51,6 +53,53 @@ final totalProfitLossProvider = Provider<AsyncValue<double>>((ref) {
       }
 
       return AsyncData(total);
+    },
+    loading: () => const AsyncLoading(),
+    error: (error, stack) => AsyncError(error, stack),
+  );
+});
+
+// Provider for filtered transactions based on time filter
+final filteredTransactionsProvider =
+    Provider.family<AsyncValue<List<Transaction>>, TransactionParams>(
+        (ref, params) {
+  final transactionsAsync = ref.watch(transactionsProvider(params));
+  final timeFilter = ref.watch(timeFilterProvider);
+
+  return transactionsAsync.when(
+    data: (transactions) {
+      final dateRange = timeFilter.getDateRange();
+
+      // Filter transactions based on date range
+      final filteredTransactions = transactions.where((transaction) {
+        return dateRange.includes(transaction.createdAt);
+      }).toList();
+
+      return AsyncData(filteredTransactions);
+    },
+    loading: () => const AsyncLoading(),
+    error: (error, stack) => AsyncError(error, stack),
+  );
+});
+
+// Provider for filtered closed trades based on time filter
+final filteredClosedTradesProvider = Provider<AsyncValue<List<Trade>>>((ref) {
+  final tradesAsync = ref.watch(tradesProvider);
+  final timeFilter = ref.watch(timeFilterProvider);
+
+  return tradesAsync.when(
+    data: (trades) {
+      final dateRange = timeFilter.getDateRange();
+
+      // Filter closed trades based on date range
+      final filteredTrades = trades.where((trade) {
+        if (trade.status != TradeStatus.closed || trade.closeTime == null) {
+          return false;
+        }
+        return dateRange.includes(trade.closeTime!);
+      }).toList();
+
+      return AsyncData(filteredTrades);
     },
     loading: () => const AsyncLoading(),
     error: (error, stack) => AsyncError(error, stack),
@@ -105,7 +154,8 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
 
     try {
       // Get current transactions
-      final transactionsAsync = ref.read(transactionsProvider(TransactionParams(
+      final transactionsAsync =
+          ref.read(filteredTransactionsProvider(TransactionParams(
         limit: _transactionParams.limit,
         offset: _transactionParams.offset,
       )));
@@ -161,6 +211,13 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
           ),
         ),
         actions: [
+          // Add time filter dropdown
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+            child: Center(
+              child: TimeFilterDropdown(),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.add),
             tooltip: 'Deposit Funds',
@@ -634,12 +691,13 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
   }
 
   Widget _buildTransactionsTab(BuildContext context) {
-    final transactionsAsync = ref.watch(transactionsProvider(TransactionParams(
+    final filteredTransactionsAsync =
+        ref.watch(filteredTransactionsProvider(TransactionParams(
       limit: _transactionParams.limit,
       offset: _transactionParams.offset,
     )));
 
-    return transactionsAsync.when(
+    return filteredTransactionsAsync.when(
       data: (transactions) {
         if (transactions.isEmpty && _transactionParams.offset == 0) {
           return _buildEmptyState(
@@ -774,14 +832,11 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
   }
 
   Widget _buildClosedTradesTab(BuildContext context) {
-    final tradesAsync = ref.watch(tradesProvider);
+    final filteredClosedTradesAsync = ref.watch(filteredClosedTradesProvider);
 
-    return tradesAsync.when(
+    return filteredClosedTradesAsync.when(
       data: (trades) {
-        final closedTrades =
-            trades.where((t) => t.status == TradeStatus.closed).toList();
-
-        if (closedTrades.isEmpty) {
+        if (trades.isEmpty) {
           return _buildEmptyState(
             context,
             'No Closed Trades',
@@ -795,9 +850,9 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
           },
           child: ListView.builder(
             padding: const EdgeInsets.all(8),
-            itemCount: closedTrades.length,
+            itemCount: trades.length,
             itemBuilder: (context, index) {
-              final trade = closedTrades[index];
+              final trade = trades[index];
               return _buildClosedTradeItem(context, trade);
             },
           ),

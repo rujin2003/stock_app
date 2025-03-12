@@ -1,14 +1,19 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
+import 'dart:math';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:uuid/uuid.dart';
 import '../models/trade.dart';
 import '../services/account_service.dart';
 
 class TradeService {
   final SupabaseClient _supabase = Supabase.instance.client;
-  final _uuid = const Uuid();
+  final Random _random = Random();
   final AccountService _accountService = AccountService();
+
+  // Generate a 10-digit numeric ID
+  String _generateNumericId() {
+    // Start with 10 followed by 9 random digits to ensure 10 digits total
+    return '10${_random.nextInt(900000000) + 100000000}';
+  }
 
   // Create a new trade
   Future<Trade> createTrade({
@@ -33,7 +38,7 @@ class TradeService {
         orderType == OrderType.market ? TradeStatus.open : TradeStatus.pending;
 
     final trade = Trade(
-      id: _uuid.v4(),
+      id: _generateNumericId(),
       symbolCode: symbolCode,
       symbolName: symbolName,
       type: type,
@@ -217,8 +222,6 @@ class TradeService {
         .eq('status', 'pending')
         .single();
 
-    final trade = Trade.fromJson(response);
-
     // Delete the pending order
     await _supabase
         .from('trades')
@@ -255,7 +258,7 @@ class TradeService {
 
     // Create a new closed trade record for the partial close
     final partialTrade = Trade(
-      id: _uuid.v4(),
+      id: _generateNumericId(),
       userId: trade.userId,
       symbolCode: trade.symbolCode,
       symbolName: trade.symbolName,

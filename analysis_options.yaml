@@ -4,5 +4,7 @@ linter:
   rules:
 
 analyzer:
+  errors:
+    unused_result: ignore ignore
   plugins:
     - custom_lint

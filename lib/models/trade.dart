@@ -16,6 +16,7 @@ enum TradeStatus {
 }
 
 class Trade {
+  // Changed from UUID to a 10-digit numeric ID stored as String for compatibility
   final String id;
   final String symbolCode;
   final String symbolName;
@@ -146,7 +147,8 @@ class Trade {
   // Create from JSON from database
   factory Trade.fromJson(Map<String, dynamic> json) {
     return Trade(
-      id: json['id'],
+      // For backward compatibility, handle both string and integer IDs
+      id: json['id'].toString(),
       symbolCode: json['symbol_code'],
       symbolName: json['symbol_name'],
       type: TradeType.values.firstWhere(
