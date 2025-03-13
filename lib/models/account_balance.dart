@@ -65,6 +65,7 @@ class AccountBalance {
 }
 
 class Transaction {
+  // Changed from UUID to a 10-digit numeric ID stored as String for compatibility
   final String id;
   final String userId;
   final TransactionType type;
@@ -86,14 +87,18 @@ class Transaction {
   // Create from JSON from database
   factory Transaction.fromJson(Map<String, dynamic> json) {
     return Transaction(
-      id: json['id'],
+      // For backward compatibility, handle both string and integer IDs
+      id: json['id'].toString(),
       userId: json['user_id'],
       type: TransactionType.values.firstWhere(
         (e) => e.toString().split('.').last == json['type'],
       ),
       amount: json['amount'].toDouble(),
       description: json['description'],
-      relatedTradeId: json['related_trade_id'],
+      // Handle relatedTradeId as string (could be null, integer, or string)
+      relatedTradeId: json['related_trade_id'] != null 
+          ? json['related_trade_id'].toString() 
+          : null,
       createdAt: DateTime.parse(json['created_at']),
     );
   }

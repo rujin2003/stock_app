@@ -3,11 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../models/trade.dart';
-import '../models/account_balance.dart';
 import '../providers/trade_provider.dart';
 import '../providers/market_data_provider.dart';
 import '../providers/account_provider.dart';
+import '../providers/time_filter_provider.dart';
 import '../widgets/responsive_layout.dart';
+import '../widgets/time_filter_dropdown.dart';
 
 // Provider for user equity (balance + unrealized P/L)
 final userEquityProvider = Provider<AsyncValue<double>>((ref) {
@@ -24,6 +25,34 @@ final userEquityProvider = Provider<AsyncValue<double>>((ref) {
     },
     loading: () => const AsyncLoading(),
     error: (error, stackTrace) => AsyncError(error, stackTrace),
+  );
+});
+
+// Provider for filtered trades based on time filter
+final filteredTradesProvider = Provider<AsyncValue<List<Trade>>>((ref) {
+  final tradesAsync = ref.watch(tradesProvider);
+  final timeFilter = ref.watch(timeFilterProvider);
+
+  return tradesAsync.when(
+    data: (trades) {
+      final dateRange = timeFilter.getDateRange();
+
+      // Filter trades based on date range
+      final filteredTrades = trades.where((trade) {
+        // For open trades, use openTime
+        // For closed trades, use closeTime if available, otherwise openTime
+        final dateToCheck =
+            trade.status == TradeStatus.closed && trade.closeTime != null
+                ? trade.closeTime!
+                : trade.openTime;
+
+        return dateRange.includes(dateToCheck);
+      }).toList();
+
+      return AsyncData(filteredTrades);
+    },
+    loading: () => const AsyncLoading(),
+    error: (error, stack) => AsyncError(error, stack),
   );
 });
 
@@ -82,7 +111,7 @@ class TradePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final isMobile = ResponsiveLayout.isMobile(context);
-    final tradesAsync = ref.watch(tradesProvider);
+    final filteredTradesAsync = ref.watch(filteredTradesProvider);
     final totalProfitLossAsync = ref.watch(totalProfitLossProvider);
     final accountBalanceAsync = ref.watch(accountBalanceProvider);
     final equityAsync = ref.watch(userEquityProvider);
@@ -298,6 +327,15 @@ class TradePage extends ConsumerWidget {
               ),
             ],
           ),
+          actions: [
+            // Add time filter dropdown
+            Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: Center(
+                child: TimeFilterDropdown(),
+              ),
+            ),
+          ],
           bottom: TabBar(
             tabs: const [
               Tab(text: 'Open Positions'),
@@ -312,7 +350,7 @@ class TradePage extends ConsumerWidget {
         body: TabBarView(
           children: [
             // Open Positions Tab
-            tradesAsync.when(
+            filteredTradesAsync.when(
               data: (trades) {
                 final openTrades =
                     trades.where((t) => t.status == TradeStatus.open).toList();
@@ -334,7 +372,7 @@ class TradePage extends ConsumerWidget {
             ),
 
             // Pending Orders Tab
-            tradesAsync.when(
+            filteredTradesAsync.when(
               data: (trades) {
                 final pendingTrades = trades
                     .where((t) => t.status == TradeStatus.pending)
@@ -357,7 +395,7 @@ class TradePage extends ConsumerWidget {
             ),
 
             // Trade History Tab
-            tradesAsync.when(
+            filteredTradesAsync.when(
               data: (trades) {
                 final closedTrades = trades
                     .where((t) => t.status == TradeStatus.closed)
@@ -439,8 +477,8 @@ class TradePage extends ConsumerWidget {
       BuildContext context, List<Trade> pendingTrades, WidgetRef ref) {
     return RefreshIndicator(
       onRefresh: () async {
-        // Refresh trades
-        ref.refresh(tradesProvider);
+        // Refresh trades and await the result
+        await ref.refresh(tradesProvider.future);
       },
       child: pendingTrades.isEmpty
           ? _buildEmptyState(
@@ -464,9 +502,9 @@ class MetaTraderStyleTradeCard extends ConsumerStatefulWidget {
   final Trade trade;
 
   const MetaTraderStyleTradeCard({
-    Key? key,
+    super.key,
     required this.trade,
-  }) : super(key: key);
+  });
 
   @override
   ConsumerState<MetaTraderStyleTradeCard> createState() =>
@@ -492,11 +530,14 @@ class _MetaTraderStyleTradeCardState
     return Card(
       margin: const EdgeInsets.only(bottom: 4),
       elevation: 1,
-      child: InkWell(
+      child: GestureDetector(
         onTap: () {
           setState(() {
             isExpanded = !isExpanded;
           });
+        },
+        onLongPress: () {
+          _showTradeOptionsMenu(context, trade);
         },
         child: Container(
           color: theme.colorScheme.surface,
@@ -619,48 +660,6 @@ class _MetaTraderStyleTradeCardState
                         ),
                       ),
                     ),
-                    // Menu button
-                    PopupMenuButton<String>(
-                      icon: const Icon(Icons.more_vert),
-                      onSelected: (value) {
-                        if (value == 'close') {
-                          _showCloseTradeDialog(context, trade, ref);
-                        } else if (value == 'modify') {
-                          _showModifyTradeDialog(context, trade, ref);
-                        } else if (value == 'partial') {
-                          _showPartialCloseDialog(context, trade, ref);
-                        }
-                      },
-                      itemBuilder: (context) => [
-                        const PopupMenuItem<String>(
-                          value: 'close',
-                          child: ListTile(
-                            leading: Icon(Icons.close),
-                            title: Text('Close Position'),
-                            contentPadding: EdgeInsets.zero,
-                            dense: true,
-                          ),
-                        ),
-                        const PopupMenuItem<String>(
-                          value: 'modify',
-                          child: ListTile(
-                            leading: Icon(Icons.edit),
-                            title: Text('Modify SL/TP'),
-                            contentPadding: EdgeInsets.zero,
-                            dense: true,
-                          ),
-                        ),
-                        const PopupMenuItem<String>(
-                          value: 'partial',
-                          child: ListTile(
-                            leading: Icon(Icons.content_cut),
-                            title: Text('Partial Close'),
-                            contentPadding: EdgeInsets.zero,
-                            dense: true,
-                          ),
-                        ),
-                      ],
-                    ),
                   ],
                 ),
               ),
@@ -752,6 +751,64 @@ class _MetaTraderStyleTradeCardState
         ),
       ],
     );
+  }
+
+  void _showTradeOptionsMenu(BuildContext context, Trade trade) {
+    final RenderBox button = context.findRenderObject() as RenderBox;
+    final RenderBox overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox;
+    final RelativeRect position = RelativeRect.fromRect(
+      Rect.fromPoints(
+        button.localToGlobal(Offset.zero, ancestor: overlay),
+        button.localToGlobal(button.size.bottomRight(Offset.zero),
+            ancestor: overlay),
+      ),
+      Offset.zero & overlay.size,
+    );
+
+    showMenu<String>(
+      context: context,
+      position: position,
+      items: [
+        const PopupMenuItem<String>(
+          value: 'close',
+          child: ListTile(
+            leading: Icon(Icons.close),
+            title: Text('Close Position'),
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+          ),
+        ),
+        const PopupMenuItem<String>(
+          value: 'modify',
+          child: ListTile(
+            leading: Icon(Icons.edit),
+            title: Text('Modify SL/TP'),
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+          ),
+        ),
+        const PopupMenuItem<String>(
+          value: 'partial',
+          child: ListTile(
+            leading: Icon(Icons.content_cut),
+            title: Text('Partial Close'),
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+          ),
+        ),
+      ],
+    ).then((value) {
+      if (value == null) return;
+
+      if (value == 'close') {
+        _showCloseTradeDialog(context, trade, ref);
+      } else if (value == 'modify') {
+        _showModifyTradeDialog(context, trade, ref);
+      } else if (value == 'partial') {
+        _showPartialCloseDialog(context, trade, ref);
+      }
+    });
   }
 
   void _showCloseTradeDialog(BuildContext context, Trade trade, WidgetRef ref) {
@@ -1623,11 +1680,14 @@ class _MetaTraderStyleHistoryCardState
     return Card(
       margin: const EdgeInsets.only(bottom: 4),
       elevation: 1,
-      child: InkWell(
+      child: GestureDetector(
         onTap: () {
           setState(() {
             isExpanded = !isExpanded;
           });
+        },
+        onLongPress: () {
+          _showHistoryTradeOptionsMenu(context, trade);
         },
         child: Container(
           color: theme.colorScheme.surface,
@@ -1869,6 +1929,108 @@ class _MetaTraderStyleHistoryCardState
           ),
         ),
       ],
+    );
+  }
+
+  void _showHistoryTradeOptionsMenu(BuildContext context, Trade trade) {
+    final RenderBox button = context.findRenderObject() as RenderBox;
+    final RenderBox overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox;
+    final RelativeRect position = RelativeRect.fromRect(
+      Rect.fromPoints(
+        button.localToGlobal(Offset.zero, ancestor: overlay),
+        button.localToGlobal(button.size.bottomRight(Offset.zero),
+            ancestor: overlay),
+      ),
+      Offset.zero & overlay.size,
+    );
+
+    showMenu<String>(
+      context: context,
+      position: position,
+      items: [
+        const PopupMenuItem<String>(
+          value: 'details',
+          child: ListTile(
+            leading: Icon(Icons.info_outline),
+            title: Text('View Details'),
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+          ),
+        ),
+        const PopupMenuItem<String>(
+          value: 'duplicate',
+          child: ListTile(
+            leading: Icon(Icons.copy),
+            title: Text('Duplicate Trade'),
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+          ),
+        ),
+      ],
+    ).then((value) {
+      if (value == null) return;
+
+      if (value == 'details') {
+        setState(() {
+          isExpanded = true;
+        });
+      } else if (value == 'duplicate') {
+        _duplicateHistoryTrade(context, trade);
+      }
+    });
+  }
+
+  void _duplicateHistoryTrade(BuildContext context, Trade trade) {
+    // Create a new trade with the same parameters
+    final tradeService = ref.read(tradeServiceProvider);
+
+    // Show confirmation dialog
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Duplicate Trade'),
+        content: Text(
+            'Do you want to create a new ${trade.type == TradeType.buy ? "Buy" : "Sell"} order for ${trade.symbolCode} with the same parameters?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+
+              // Create a new pending order with the same parameters
+              tradeService
+                  .createTrade(
+                symbolCode: trade.symbolCode,
+                symbolName: trade.symbolName,
+                type: trade.type,
+                volume: trade.volume,
+                leverage: trade.leverage,
+                entryPrice: trade.entryPrice,
+                orderType: OrderType.limit, // Make it a limit order
+                limitPrice: trade.entryPrice,
+                stopLoss: trade.stopLoss,
+                takeProfit: trade.takeProfit,
+              )
+                  .then((_) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Pending order created')),
+                );
+                // Refresh trades list
+                ref.refresh(tradesProvider);
+              }).catchError((error) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Error: ${error.toString()}')),
+                );
+              });
+            },
+            child: const Text('Create'),
+          ),
+        ],
+      ),
     );
   }
 }

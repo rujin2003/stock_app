@@ -143,37 +143,87 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
       });
     }
 
-    // Update volume controller if form value changes from elsewhere
-    if (_showTradeForm &&
-        _volumeController.text != form.volume.toStringAsFixed(2)) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _volumeController.text = form.volume.toStringAsFixed(2);
-      });
-    }
-
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Buy/Sell buttons
-        Row(
-          children: [
-            Expanded(
-              child: _buildTradeButton(
-                context,
-                TradeType.buy,
-                theme.colorScheme.primary,
+        // Single button for creating orders
+        if (!_showTradeForm) ...[
+          // Initial button to open the trade form
+          Container(
+            width: double.infinity,
+            height: isMobile ? 50 : 56,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: [
+                BoxShadow(
+                  color: theme.colorScheme.primary.withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  theme.colorScheme.primary,
+                  Color.lerp(theme.colorScheme.primary,
+                          theme.colorScheme.secondary, 0.6) ??
+                      theme.colorScheme.primary,
+                ],
               ),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _buildTradeButton(
-                context,
-                TradeType.sell,
-                Colors.red,
+            child: ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _showTradeForm = true;
+                });
+
+                // Initialize volume controller with current value
+                final form = ref.read(tradeFormProvider);
+                _volumeController.text = form.volume.toStringAsFixed(2);
+
+                // Ensure SL/TP are null when opening the form
+                ref.read(tradeFormProvider.notifier).setStopLoss(null);
+                ref.read(tradeFormProvider.notifier).setTakeProfit(null);
+                ref.read(tradeFormProvider.notifier).setTrailingStopLoss(null);
+
+                // Set suggested values based on current order type
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  setState(() {});
+                  _updateSuggestedValues();
+                });
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shadowColor: Colors.transparent,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: EdgeInsets.zero,
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.add_circle_outline,
+                    size: isMobile ? 18 : 20,
+                  ),
+                  SizedBox(width: 8),
+                  Text(
+                    'NEW ORDER',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: isMobile ? 14 : 16,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
 
         // Trade form (appears when a button is clicked)
         if (_showTradeForm) ...[
@@ -190,12 +240,9 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        '${_selectedTradeType == TradeType.buy ? 'Buy' : 'Sell'} ${widget.symbol.code}',
+                        widget.symbol.code,
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
-                          color: _selectedTradeType == TradeType.buy
-                              ? theme.colorScheme.primary
-                              : Colors.red,
                         ),
                       ),
                       IconButton(
@@ -211,6 +258,15 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
 
                           // Reset the form values
                           ref.read(tradeFormProvider.notifier).reset();
+                          ref
+                              .read(tradeFormProvider.notifier)
+                              .setStopLoss(null);
+                          ref
+                              .read(tradeFormProvider.notifier)
+                              .setTakeProfit(null);
+                          ref
+                              .read(tradeFormProvider.notifier)
+                              .setTrailingStopLoss(null);
 
                           // Update the UI
                           setState(() {
@@ -228,80 +284,6 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
                   _buildOrderTypeDropdown(context),
                   const SizedBox(height: 16),
 
-                  // Order Type specific fields
-                  if (_selectedOrderType == OrderType.limit) ...[
-                    _buildPriceField(
-                      context,
-                      'Limit Price',
-                      _limitPriceController,
-                      (value) => ref
-                          .read(tradeFormProvider.notifier)
-                          .setLimitPrice(value),
-                      // Buy Limit should be below current price, Sell Limit above
-                      _selectedTradeType == TradeType.buy
-                          ? widget.currentPrice *
-                              0.98 // Buy Limit below current price
-                          : widget.currentPrice *
-                              1.02, // Sell Limit above current price
-                      form.limitPrice,
-                      isRequired: true,
-                      description: _selectedTradeType == TradeType.buy
-                          ? 'Buy when price drops to this level'
-                          : 'Sell when price rises to this level',
-                      focusNode: _limitPriceFocus,
-                    ),
-                    const SizedBox(height: 16),
-                  ] else if (_selectedOrderType == OrderType.stopLimit) ...[
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildPriceField(
-                            context,
-                            'Stop Price',
-                            _stopPriceController,
-                            (value) => ref
-                                .read(tradeFormProvider.notifier)
-                                .setStopPrice(value),
-                            // Buy Stop above current price, Sell Stop below
-                            _selectedTradeType == TradeType.buy
-                                ? widget.currentPrice *
-                                    1.02 // Buy Stop above current price
-                                : widget.currentPrice *
-                                    0.98, // Sell Stop below current price
-                            form.stopPrice,
-                            isRequired: true,
-                            description: 'Order activation price',
-                            focusNode: _stopPriceFocus,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: _buildPriceField(
-                            context,
-                            'Limit Price',
-                            _limitPriceController,
-                            (value) => ref
-                                .read(tradeFormProvider.notifier)
-                                .setLimitPrice(value),
-                            // Buy Limit below Stop, Sell Limit above Stop
-                            _selectedTradeType == TradeType.buy
-                                ? (form.stopPrice ??
-                                        (widget.currentPrice * 1.02)) *
-                                    0.99 // Buy Limit below Stop
-                                : (form.stopPrice ??
-                                        (widget.currentPrice * 0.98)) *
-                                    1.01, // Sell Limit above Stop
-                            form.limitPrice,
-                            isRequired: true,
-                            description: 'Execution price after activation',
-                            focusNode: _limitPriceFocus,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-
                   // Volume (lot size)
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -317,7 +299,8 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
                         controller: _volumeController,
                         focusNode: _volumeFocus,
                         keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true),
+                          decimal: true,
+                        ),
                         inputFormatters: [
                           FilteringTextInputFormatter.allow(
                               RegExp(r'^\d*\.?\d*')),
@@ -336,14 +319,98 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
                         style: theme.textTheme.bodyMedium,
                         onChanged: (value) {
                           final volume = double.tryParse(value);
-                          // Set a minimal volume if empty or invalid
-                          ref
-                              .read(tradeFormProvider.notifier)
-                              .setVolume(volume ?? 0.01);
+                          if (volume != null && volume > 0) {
+                            ref
+                                .read(tradeFormProvider.notifier)
+                                .setVolume(volume);
+                          } else {
+                            // Set a default minimal volume if input is invalid
+                            _volumeController.text = '0.01';
+                            ref
+                                .read(tradeFormProvider.notifier)
+                                .setVolume(0.01);
+                          }
                         },
                       ),
                     ],
                   ),
+                  const SizedBox(height: 16),
+
+                  // Order Type specific fields
+                  if (_selectedOrderType == OrderType.limit) ...[
+                    _buildPriceField(
+                      context,
+                      'Limit Price',
+                      _limitPriceController,
+                      (value) {
+                        ref
+                            .read(tradeFormProvider.notifier)
+                            .setLimitPrice(value);
+                      },
+                      _selectedTradeType == TradeType.buy
+                          ? widget.currentPrice * 0.98
+                          : widget.currentPrice * 1.02,
+                      form.limitPrice,
+                      isRequired: true,
+                      description: _selectedTradeType == TradeType.buy
+                          ? 'Buy when price drops to this level'
+                          : 'Sell when price rises to this level',
+                      focusNode: _limitPriceFocus,
+                      allowClear: false,
+                    ),
+                    const SizedBox(height: 16),
+                  ] else if (_selectedOrderType == OrderType.stopLimit) ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildPriceField(
+                            context,
+                            'Stop Price',
+                            _stopPriceController,
+                            (value) {
+                              ref
+                                  .read(tradeFormProvider.notifier)
+                                  .setStopPrice(value);
+                            },
+                            _selectedTradeType == TradeType.buy
+                                ? widget.currentPrice * 1.02
+                                : widget.currentPrice * 0.98,
+                            form.stopPrice,
+                            isRequired: true,
+                            description: 'Order activation price',
+                            focusNode: _stopPriceFocus,
+                            allowClear: false,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: _buildPriceField(
+                            context,
+                            'Limit Price',
+                            _limitPriceController,
+                            (value) {
+                              ref
+                                  .read(tradeFormProvider.notifier)
+                                  .setLimitPrice(value);
+                            },
+                            _selectedTradeType == TradeType.buy
+                                ? (form.stopPrice ??
+                                        (widget.currentPrice * 1.02)) *
+                                    0.99
+                                : (form.stopPrice ??
+                                        (widget.currentPrice * 0.98)) *
+                                    1.01,
+                            form.limitPrice,
+                            isRequired: true,
+                            description: 'Execution price after activation',
+                            focusNode: _limitPriceFocus,
+                            allowClear: false,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                  ],
 
                   // Stop Loss, Take Profit, and Trailing Stop (always visible now)
                   Row(
@@ -365,14 +432,17 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
                           context,
                           'Stop Loss',
                           _stopLossController,
-                          (value) => ref
-                              .read(tradeFormProvider.notifier)
-                              .setStopLoss(value),
+                          (value) {
+                            ref
+                                .read(tradeFormProvider.notifier)
+                                .setStopLoss(value);
+                          },
                           _selectedTradeType == TradeType.buy
                               ? widget.currentPrice * 0.99
                               : widget.currentPrice * 1.01,
                           form.stopLoss,
                           focusNode: _stopLossFocus,
+                          allowClear: true,
                         ),
                       ),
                       const SizedBox(width: 16),
@@ -381,14 +451,17 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
                           context,
                           'Take Profit',
                           _takeProfitController,
-                          (value) => ref
-                              .read(tradeFormProvider.notifier)
-                              .setTakeProfit(value),
+                          (value) {
+                            ref
+                                .read(tradeFormProvider.notifier)
+                                .setTakeProfit(value);
+                          },
                           _selectedTradeType == TradeType.buy
                               ? widget.currentPrice * 1.01
                               : widget.currentPrice * 0.99,
                           form.takeProfit,
                           focusNode: _takeProfitFocus,
+                          allowClear: true,
                         ),
                       ),
                     ],
@@ -398,37 +471,97 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
                     context,
                     'Trailing Stop (points)',
                     _trailingStopController,
-                    (value) => ref
-                        .read(tradeFormProvider.notifier)
-                        .setTrailingStopLoss(value),
+                    (value) {
+                      ref
+                          .read(tradeFormProvider.notifier)
+                          .setTrailingStopLoss(value);
+                    },
                     10.0, // Default 10 points
                     form.trailingStopLoss,
                     isTrailingStop: true,
                     focusNode: _trailingStopFocus,
+                    allowClear: true,
                   ),
 
                   const SizedBox(height: 16),
 
-                  // Execute trade button
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () => _executeTrade(context),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _selectedTradeType == TradeType.buy
-                            ? theme.colorScheme.primary
-                            : Colors.red,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                      child: Text(
-                        _getExecuteButtonText(),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
+                  // Execute trade button for all order types
+                  if (_selectedOrderType == OrderType.market) ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () {
+                              setState(() {
+                                _selectedTradeType = TradeType.buy;
+                              });
+                              _executeTrade(context);
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: theme.colorScheme.primary,
+                              foregroundColor: Colors.white,
+                              padding: EdgeInsets.symmetric(
+                                vertical: isMobile ? 12 : 16,
+                              ),
+                            ),
+                            child: Text(
+                              'BUY',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: isMobile ? 14 : 16,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () {
+                              setState(() {
+                                _selectedTradeType = TradeType.sell;
+                              });
+                              _executeTrade(context);
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red,
+                              foregroundColor: Colors.white,
+                              padding: EdgeInsets.symmetric(
+                                vertical: isMobile ? 12 : 16,
+                              ),
+                            ),
+                            child: Text(
+                              'SELL',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: isMobile ? 14 : 16,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ] else ...[
+                    // Execute trade button for non-market orders
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () => _executeTrade(context),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _selectedTradeType == TradeType.buy
+                              ? theme.colorScheme.primary
+                              : Colors.red,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        child: Text(
+                          _getExecuteButtonText(),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
 
                   // Price and value info
                   const SizedBox(height: 12),
@@ -469,82 +602,46 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
           ),
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: DropdownButtonHideUnderline(
-            child: DropdownButton<OrderType>(
-              value: _selectedOrderType,
+            child: DropdownButton<String>(
+              value: _getOrderTypeValue(),
               isExpanded: true,
               icon: const Icon(Icons.arrow_drop_down),
               style: theme.textTheme.bodyMedium,
-              onChanged: (OrderType? newValue) {
+              onChanged: (String? newValue) {
                 if (newValue != null) {
                   // Reset price fields when changing order types
-                  if (_selectedOrderType != newValue) {
-                    _limitPriceController.clear();
-                    _stopPriceController.clear();
-                    ref.read(tradeFormProvider.notifier).setLimitPrice(null);
-                    ref.read(tradeFormProvider.notifier).setStopPrice(null);
-                  }
+                  _limitPriceController.clear();
+                  _stopPriceController.clear();
+                  ref.read(tradeFormProvider.notifier).setLimitPrice(null);
+                  ref.read(tradeFormProvider.notifier).setStopPrice(null);
 
-                  setState(() {
-                    _selectedOrderType = newValue;
-                  });
-                  ref.read(tradeFormProvider.notifier).setOrderType(newValue);
-
-                  // Set suggested values based on new order type
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (newValue == OrderType.limit) {
-                      double suggestedPrice =
-                          _selectedTradeType == TradeType.buy
-                              ? widget.currentPrice *
-                                  0.98 // Buy Limit below current price
-                              : widget.currentPrice *
-                                  1.02; // Sell Limit above current price
-                      _limitPriceController.text =
-                          suggestedPrice.toStringAsFixed(2);
-                      ref
-                          .read(tradeFormProvider.notifier)
-                          .setLimitPrice(suggestedPrice);
-                    } else if (newValue == OrderType.stopLimit) {
-                      double suggestedStopPrice =
-                          _selectedTradeType == TradeType.buy
-                              ? widget.currentPrice *
-                                  1.02 // Buy Stop above current price
-                              : widget.currentPrice *
-                                  0.98; // Sell Stop below current price
-                      _stopPriceController.text =
-                          suggestedStopPrice.toStringAsFixed(2);
-                      ref
-                          .read(tradeFormProvider.notifier)
-                          .setStopPrice(suggestedStopPrice);
-
-                      double suggestedLimitPrice = _selectedTradeType ==
-                              TradeType.buy
-                          ? suggestedStopPrice * 0.99 // Buy Limit below Stop
-                          : suggestedStopPrice * 1.01; // Sell Limit above Stop
-                      _limitPriceController.text =
-                          suggestedLimitPrice.toStringAsFixed(2);
-                      ref
-                          .read(tradeFormProvider.notifier)
-                          .setLimitPrice(suggestedLimitPrice);
-                    }
-                  });
+                  // Parse the new value to set trade type and order type
+                  _parseAndSetOrderTypeValue(newValue);
                 }
               },
               items: [
-                DropdownMenuItem<OrderType>(
-                  value: OrderType.market,
+                // Market execution item
+                DropdownMenuItem<String>(
+                  value: 'market_execution',
                   child: Text('Market Execution'),
                 ),
-                DropdownMenuItem<OrderType>(
-                  value: OrderType.limit,
-                  child: Text(_selectedTradeType == TradeType.buy
-                      ? 'Buy Limit'
-                      : 'Sell Limit'),
+                // Limit order items
+                DropdownMenuItem<String>(
+                  value: 'buy_limit',
+                  child: Text('Buy Limit'),
                 ),
-                DropdownMenuItem<OrderType>(
-                  value: OrderType.stopLimit,
-                  child: Text(_selectedTradeType == TradeType.buy
-                      ? 'Buy Stop Limit'
-                      : 'Sell Stop Limit'),
+                DropdownMenuItem<String>(
+                  value: 'sell_limit',
+                  child: Text('Sell Limit'),
+                ),
+                // Stop Limit order items
+                DropdownMenuItem<String>(
+                  value: 'buy_stop_limit',
+                  child: Text('Buy Stop Limit'),
+                ),
+                DropdownMenuItem<String>(
+                  value: 'sell_stop_limit',
+                  child: Text('Sell Stop Limit'),
                 ),
               ],
             ),
@@ -554,83 +651,66 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
     );
   }
 
-  Widget _buildTradeButton(BuildContext context, TradeType type, Color color) {
-    final theme = Theme.of(context);
-    final isMobile = ResponsiveLayout.isMobile(context);
+  // Helper method to get the combined order type value
+  String _getOrderTypeValue() {
+    if (_selectedOrderType == OrderType.market) {
+      return 'market_execution';
+    }
 
-    return ElevatedButton(
-      onPressed: () {
-        // Reset form if switching between buy and sell
-        if (_showTradeForm && _selectedTradeType != type) {
-          // Clear all fields
-          _limitPriceController.clear();
-          _stopPriceController.clear();
-          _stopLossController.clear();
-          _takeProfitController.clear();
-          _trailingStopController.clear();
+    final prefix = _selectedTradeType == TradeType.buy ? 'buy' : 'sell';
+    final String suffix;
 
-          // Reset form values
-          ref.read(tradeFormProvider.notifier).setLimitPrice(null);
-          ref.read(tradeFormProvider.notifier).setStopPrice(null);
-          ref.read(tradeFormProvider.notifier).setStopLoss(null);
-          ref.read(tradeFormProvider.notifier).setTakeProfit(null);
-          ref.read(tradeFormProvider.notifier).setTrailingStopLoss(null);
+    if (_selectedOrderType == OrderType.limit) {
+      suffix = 'limit';
+    } else {
+      // Must be OrderType.stopLimit
+      suffix = 'stop_limit';
+    }
+
+    return '${prefix}_${suffix}';
+  }
+
+  // Helper method to parse and set the order type value
+  void _parseAndSetOrderTypeValue(String value) {
+    setState(() {
+      if (value == 'market_execution') {
+        _selectedOrderType = OrderType.market;
+        // Don't change trade type for market execution
+      } else {
+        if (value.startsWith('buy')) {
+          _selectedTradeType = TradeType.buy;
+        } else if (value.startsWith('sell')) {
+          _selectedTradeType = TradeType.sell;
         }
 
-        setState(() {
-          _selectedTradeType = type;
-          _showTradeForm = true;
-        });
-
-        // Initialize volume controller with current value
-        final form = ref.read(tradeFormProvider);
-        _volumeController.text = form.volume.toStringAsFixed(2);
-
-        // Update dropdown items text based on trade type and set suggested values
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          setState(() {});
-
-          // Set suggested values based on current order type
-          if (_selectedOrderType == OrderType.limit) {
-            double suggestedPrice = type == TradeType.buy
-                ? widget.currentPrice * 0.98 // Buy Limit below current price
-                : widget.currentPrice * 1.02; // Sell Limit above current price
-            _limitPriceController.text = suggestedPrice.toStringAsFixed(2);
-            ref.read(tradeFormProvider.notifier).setLimitPrice(suggestedPrice);
-          } else if (_selectedOrderType == OrderType.stopLimit) {
-            double suggestedStopPrice = type == TradeType.buy
-                ? widget.currentPrice * 1.02 // Buy Stop above current price
-                : widget.currentPrice * 0.98; // Sell Stop below current price
-            _stopPriceController.text = suggestedStopPrice.toStringAsFixed(2);
-            ref
-                .read(tradeFormProvider.notifier)
-                .setStopPrice(suggestedStopPrice);
-
-            double suggestedLimitPrice = type == TradeType.buy
-                ? suggestedStopPrice * 0.99 // Buy Limit below Stop
-                : suggestedStopPrice * 1.01; // Sell Limit above Stop
-            _limitPriceController.text = suggestedLimitPrice.toStringAsFixed(2);
-            ref
-                .read(tradeFormProvider.notifier)
-                .setLimitPrice(suggestedLimitPrice);
+        if (value.contains('limit')) {
+          if (value.contains('stop')) {
+            _selectedOrderType = OrderType.stopLimit;
+          } else {
+            _selectedOrderType = OrderType.limit;
           }
-        });
-      },
-      style: ElevatedButton.styleFrom(
-        backgroundColor: color,
-        foregroundColor: Colors.white,
-        padding: EdgeInsets.symmetric(
-          vertical: isMobile ? 8 : 12,
-        ),
-      ),
-      child: Text(
-        type == TradeType.buy ? 'BUY' : 'SELL',
-        style: TextStyle(
-          fontWeight: FontWeight.bold,
-          fontSize: isMobile ? 14 : 16,
-        ),
-      ),
-    );
+        }
+      }
+    });
+
+    // Set the order type in the form provider
+    ref.read(tradeFormProvider.notifier).setOrderType(_selectedOrderType);
+
+    // Clear SL/TP values when changing order types
+    ref.read(tradeFormProvider.notifier).setStopLoss(null);
+    ref.read(tradeFormProvider.notifier).setTakeProfit(null);
+    ref.read(tradeFormProvider.notifier).setTrailingStopLoss(null);
+
+    // Clear SL/TP text fields
+    _stopLossController.clear();
+    _takeProfitController.clear();
+    _trailingStopController.clear();
+
+    // Set suggested values for the new order type
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      setState(() {});
+      _updateSuggestedValues();
+    });
   }
 
   Widget _buildPriceField(
@@ -644,13 +724,9 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
     bool isRequired = false,
     String? description,
     FocusNode? focusNode,
+    bool allowClear = true,
   }) {
     final theme = Theme.of(context);
-
-    // Only update controller text if value changes from elsewhere AND is not null
-    if (currentValue != null && controller.text.isEmpty) {
-      controller.text = currentValue.toStringAsFixed(2);
-    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -698,16 +774,57 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
             ),
             hintText: isRequired ? 'Required' : null,
             suffixText: isTrailingStop ? 'points' : null,
+            suffixIcon: controller.text.isNotEmpty && allowClear
+                ? IconButton(
+                    icon: const Icon(Icons.clear, size: 16),
+                    onPressed: () {
+                      controller.clear();
+                      onChanged(null);
+                      // Update form provider based on which field is being cleared
+                      if (controller == _stopLossController) {
+                        ref.read(tradeFormProvider.notifier).setStopLoss(null);
+                      } else if (controller == _takeProfitController) {
+                        ref
+                            .read(tradeFormProvider.notifier)
+                            .setTakeProfit(null);
+                      } else if (controller == _trailingStopController) {
+                        ref
+                            .read(tradeFormProvider.notifier)
+                            .setTrailingStopLoss(null);
+                      } else if (controller == _limitPriceController) {
+                        ref
+                            .read(tradeFormProvider.notifier)
+                            .setLimitPrice(null);
+                      } else if (controller == _stopPriceController) {
+                        ref.read(tradeFormProvider.notifier).setStopPrice(null);
+                      }
+                    },
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  )
+                : null,
           ),
           style: theme.textTheme.bodyMedium,
           onChanged: (value) {
             if (value.isEmpty) {
               onChanged(null);
+              // Ensure the provider is updated with null
+              if (controller == _stopLossController) {
+                ref.read(tradeFormProvider.notifier).setStopLoss(null);
+              } else if (controller == _takeProfitController) {
+                ref.read(tradeFormProvider.notifier).setTakeProfit(null);
+              } else if (controller == _trailingStopController) {
+                ref.read(tradeFormProvider.notifier).setTrailingStopLoss(null);
+              } else if (controller == _limitPriceController) {
+                ref.read(tradeFormProvider.notifier).setLimitPrice(null);
+              } else if (controller == _stopPriceController) {
+                ref.read(tradeFormProvider.notifier).setStopPrice(null);
+              }
             } else {
-              onChanged(double.tryParse(value));
+              final parsedValue = double.tryParse(value);
+              onChanged(parsedValue);
             }
 
-            // Force rebuild to update UI (show/hide clear buttons)
             setState(() {
               print('setState called from TextField onChanged');
             });
@@ -735,6 +852,20 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
   }
 
   void _executeTrade(BuildContext context) async {
+    // Get SL/TP values from text fields
+    final double? stopLoss = _stopLossController.text.isNotEmpty
+        ? double.tryParse(_stopLossController.text)
+        : null;
+
+    final double? takeProfit = _takeProfitController.text.isNotEmpty
+        ? double.tryParse(_takeProfitController.text)
+        : null;
+
+    final double? trailingStopLoss = _trailingStopController.text.isNotEmpty
+        ? double.tryParse(_trailingStopController.text)
+        : null;
+
+    // Re-read the form after updates
     final form = ref.read(tradeFormProvider);
 
     // Capture the ScaffoldMessengerState before any async operations
@@ -835,6 +966,9 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
       symbolName: widget.symbol.name,
       type: _selectedTradeType,
       currentPrice: widget.currentPrice,
+      stopLoss: stopLoss,
+      takeProfit: takeProfit,
+      trailingStopLoss: trailingStopLoss,
     );
 
     try {
@@ -856,15 +990,17 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
       setState(() {
         _showTradeForm = false;
       });
-      ref.read(tradeFormProvider.notifier).reset();
 
-      // Clear text controllers
+      // Clear all text controllers
       _stopLossController.clear();
       _takeProfitController.clear();
-      _volumeController.clear();
+      _trailingStopController.clear();
       _limitPriceController.clear();
       _stopPriceController.clear();
-      _trailingStopController.clear();
+      _volumeController.clear();
+
+      // Reset the form values
+      ref.read(tradeFormProvider.notifier).reset();
 
       // Show success message
       scaffoldMessenger.showSnackBar(
@@ -900,5 +1036,37 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
       default:
         return '';
     }
+  }
+
+  // Helper method to update suggested values based on trade type and order type
+  void _updateSuggestedValues() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_selectedOrderType == OrderType.limit) {
+        double suggestedPrice = _selectedTradeType == TradeType.buy
+            ? widget.currentPrice * 0.98 // Buy Limit below current price
+            : widget.currentPrice * 1.02; // Sell Limit above current price
+        _limitPriceController.text = suggestedPrice.toStringAsFixed(2);
+        ref.read(tradeFormProvider.notifier).setLimitPrice(suggestedPrice);
+      } else if (_selectedOrderType == OrderType.stopLimit) {
+        double suggestedStopPrice = _selectedTradeType == TradeType.buy
+            ? widget.currentPrice * 1.02 // Buy Stop above current price
+            : widget.currentPrice * 0.98; // Sell Stop below current price
+        _stopPriceController.text = suggestedStopPrice.toStringAsFixed(2);
+        ref.read(tradeFormProvider.notifier).setStopPrice(suggestedStopPrice);
+
+        double suggestedLimitPrice = _selectedTradeType == TradeType.buy
+            ? suggestedStopPrice * 0.99 // Buy Limit below Stop
+            : suggestedStopPrice * 1.01; // Sell Limit above Stop
+        _limitPriceController.text = suggestedLimitPrice.toStringAsFixed(2);
+        ref.read(tradeFormProvider.notifier).setLimitPrice(suggestedLimitPrice);
+      }
+
+      // Remove the stop loss and take profit suggestions
+      // DO NOT set default values for SL/TP
+      // Keep these fields empty by default
+
+      // Force UI update
+      setState(() {});
+    });
   }
 }

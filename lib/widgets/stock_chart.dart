@@ -12,9 +12,9 @@ class StockChart extends ConsumerStatefulWidget {
   final Symbol? symbol;
 
   const StockChart({
-    Key? key,
+    super.key,
     this.symbol,
-  }) : super(key: key);
+  });
 
   @override
   ConsumerState<StockChart> createState() => _StockChartState();
@@ -33,7 +33,7 @@ class _StockChartState extends ConsumerState<StockChart> {
       enableDoubleTapZooming: true,
       enableMouseWheelZooming: true,
       enableSelectionZooming: true,
-      zoomMode: ZoomMode.x,
+      zoomMode: ZoomMode.x, // Ensure zooming only works on x-axis
       maximumZoomLevel: 0.3,
     );
   }
@@ -333,17 +333,57 @@ class _StockChartState extends ConsumerState<StockChart> {
 
     final theme = Theme.of(context);
     final isMobile = ResponsiveLayout.isMobile(context);
+    final kLineType = ref.watch(selectedKLineTypeProvider);
+
+    // Determine appropriate date format and interval type based on kLineType
+    DateFormat dateFormat;
+    DateTimeIntervalType intervalType;
+
+    switch (kLineType) {
+      case KLineType.oneMinute:
+        dateFormat = isMobile ? DateFormat.Hm() : DateFormat('HH:mm:ss');
+        intervalType = DateTimeIntervalType.minutes;
+        break;
+      case KLineType.fiveMinutes:
+      case KLineType.fifteenMinutes:
+        dateFormat = isMobile ? DateFormat.Hm() : DateFormat('HH:mm');
+        intervalType = DateTimeIntervalType.minutes;
+        break;
+      case KLineType.thirtyMinutes:
+      case KLineType.oneHour:
+        dateFormat = DateFormat.Hm();
+        intervalType = DateTimeIntervalType.hours;
+        break;
+      case KLineType.oneDay:
+        dateFormat = isMobile ? DateFormat.MMMd() : DateFormat.yMMMd();
+        intervalType = DateTimeIntervalType.days;
+        break;
+      case KLineType.oneWeek:
+        dateFormat = isMobile ? DateFormat.MMMd() : DateFormat.yMMMd();
+        intervalType = DateTimeIntervalType.days;
+        break;
+      case KLineType.oneMonth:
+        dateFormat = isMobile ? DateFormat.MMMd() : DateFormat.yMMMd();
+        intervalType = DateTimeIntervalType.months;
+        break;
+      default:
+        dateFormat = isMobile ? DateFormat.Md() : DateFormat.yMd();
+        intervalType = DateTimeIntervalType.auto;
+    }
 
     return SfCartesianChart(
       plotAreaBorderWidth: 0,
       margin: isMobile ? const EdgeInsets.all(8) : const EdgeInsets.all(16),
       primaryXAxis: DateTimeAxis(
-        dateFormat: isMobile ? DateFormat.Md() : DateFormat.yMd(),
+        dateFormat: dateFormat,
         majorGridLines: const MajorGridLines(width: 0),
-        intervalType: DateTimeIntervalType.auto,
+        intervalType: intervalType,
         labelStyle: TextStyle(fontSize: isMobile ? 10 : 12),
         labelRotation: isMobile ? 0 : -45,
         labelAlignment: isMobile ? LabelAlignment.center : LabelAlignment.end,
+        autoScrollingDelta: _getAutoScrollingDelta(kLineType),
+        autoScrollingDeltaType: DateTimeIntervalType.auto,
+        enableAutoIntervalOnZooming: true,
       ),
       primaryYAxis: NumericAxis(
         labelFormat: '{value}',
@@ -376,6 +416,10 @@ class _StockChartState extends ConsumerState<StockChart> {
           setState(() {
             _isZoomed = true;
           });
+        } else if (args.currentZoomFactor >= 0.99 && _isZoomed) {
+          setState(() {
+            _isZoomed = false;
+          });
         }
       },
       trackballBehavior: TrackballBehavior(
@@ -385,13 +429,45 @@ class _StockChartState extends ConsumerState<StockChart> {
           enable: true,
           color: theme.colorScheme.surface,
           textStyle: TextStyle(color: theme.colorScheme.onSurface),
+          format:
+              'point.x: \${point.x}\nOpen: \${point.open}\nHigh: \${point.high}\nLow: \${point.low}\nClose: \${point.close}',
         ),
+        tooltipDisplayMode: TrackballDisplayMode.groupAllPoints,
+        lineType: TrackballLineType.vertical,
       ),
       crosshairBehavior: CrosshairBehavior(
         enable: true,
         activationMode: ActivationMode.singleTap,
-        lineType: CrosshairLineType.both,
+        lineType: CrosshairLineType
+            .vertical, // Only show vertical crosshair for x-axis focus
+        lineDashArray: const [5, 5],
+        lineColor: theme.colorScheme.primary.withOpacity(0.5),
+        lineWidth: 1,
       ),
     );
+  }
+
+  // Helper method to determine appropriate auto scrolling delta based on kLineType
+  int _getAutoScrollingDelta(KLineType kLineType) {
+    switch (kLineType) {
+      case KLineType.oneMinute:
+        return 60; // Show last 60 minutes by default
+      case KLineType.fiveMinutes:
+        return 30 * 24; // Show last 24 5-minute intervals (2 hours)
+      case KLineType.fifteenMinutes:
+        return 32; // Show last 32 15-minute intervals (8 hours)
+      case KLineType.thirtyMinutes:
+        return 48; // Show last 48 30-minute intervals (24 hours)
+      case KLineType.oneHour:
+        return 24; // Show last 24 hours
+      case KLineType.oneDay:
+        return 30; // Show last 30 days
+      case KLineType.oneWeek:
+        return 26; // Show last 26 weeks (half year)
+      case KLineType.oneMonth:
+        return 12; // Show last 12 months
+      default:
+        return 30;
+    }
   }
 }

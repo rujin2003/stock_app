@@ -1,11 +1,18 @@
+import 'dart:math';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:uuid/uuid.dart';
 import '../models/account_balance.dart';
 import '../models/trade.dart';
 
 class AccountService {
   final SupabaseClient _supabase = Supabase.instance.client;
-  final _uuid = const Uuid();
+  final Random _random = Random();
+
+  // Generate a 10-digit numeric ID
+  String _generateNumericId() {
+    // Start with 20 followed by 9 random digits to ensure 10 digits total
+    // Using a different prefix than trades (which use 10) to distinguish them
+    return '20${_random.nextInt(900000000) + 100000000}';
+  }
 
   // Get account balance for the current user
   Future<AccountBalance> getAccountBalance() async {
@@ -49,7 +56,7 @@ class AccountService {
 
     // Create transaction object
     final transaction = Transaction(
-      id: _uuid.v4(),
+      id: _generateNumericId(),
       userId: userId,
       type: type,
       amount: amount,

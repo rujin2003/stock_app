@@ -115,8 +115,62 @@ class TradeFormNotifier extends StateNotifier<TradeForm> {
   }
 
   void reset() {
-    state = TradeForm();
+    state = TradeForm(
+      volume: 0.01,
+      leverage: 500.0,
+      orderType: OrderType.market,
+      limitPrice: null,
+      stopPrice: null,
+      stopLoss: null,
+      takeProfit: null,
+      trailingStopLoss: null,
+      isAdvancedMode: false,
+    );
   }
+}
+
+// Parameters for creating a trade
+class CreateTradeParams {
+  final String symbolCode;
+  final String symbolName;
+  final TradeType type;
+  final double currentPrice;
+  final double? stopLoss;
+  final double? takeProfit;
+  final double? trailingStopLoss;
+
+  CreateTradeParams({
+    required this.symbolCode,
+    required this.symbolName,
+    required this.type,
+    required this.currentPrice,
+    this.stopLoss,
+    this.takeProfit,
+    this.trailingStopLoss,
+  });
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is CreateTradeParams &&
+        other.symbolCode == symbolCode &&
+        other.symbolName == symbolName &&
+        other.type == type &&
+        other.currentPrice == currentPrice &&
+        other.stopLoss == stopLoss &&
+        other.takeProfit == takeProfit &&
+        other.trailingStopLoss == trailingStopLoss;
+  }
+
+  @override
+  int get hashCode =>
+      symbolCode.hashCode ^
+      symbolName.hashCode ^
+      type.hashCode ^
+      currentPrice.hashCode ^
+      stopLoss.hashCode ^
+      takeProfit.hashCode ^
+      trailingStopLoss.hashCode;
 }
 
 // Provider for creating a trade
@@ -135,42 +189,10 @@ final createTradeProvider =
     stopPrice: form.stopPrice,
     volume: form.volume,
     leverage: form.leverage,
-    stopLoss: form.stopLoss,
-    takeProfit: form.takeProfit,
-    trailingStopLoss: form.trailingStopLoss,
+    stopLoss: params.stopLoss,
+    takeProfit: params.takeProfit,
+    trailingStopLoss: params.trailingStopLoss,
   );
 
   return trade;
 });
-
-// Parameters for creating a trade
-class CreateTradeParams {
-  final String symbolCode;
-  final String symbolName;
-  final TradeType type;
-  final double currentPrice;
-
-  CreateTradeParams({
-    required this.symbolCode,
-    required this.symbolName,
-    required this.type,
-    required this.currentPrice,
-  });
-
-  @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-    return other is CreateTradeParams &&
-        other.symbolCode == symbolCode &&
-        other.symbolName == symbolName &&
-        other.type == type &&
-        other.currentPrice == currentPrice;
-  }
-
-  @override
-  int get hashCode =>
-      symbolCode.hashCode ^
-      symbolName.hashCode ^
-      type.hashCode ^
-      currentPrice.hashCode;
-}
