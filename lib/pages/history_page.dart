@@ -120,6 +120,12 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
   final ScrollController _scrollController = ScrollController();
   bool _isLoadingMore = false;
 
+  // Map to track expanded state of trade items
+  final Map<int, bool> _expandedTrades = {};
+
+  // Map to track expanded state of transaction items
+  final Map<String, bool> _expandedTransactions = {};
+
   @override
   void initState() {
     super.initState();
@@ -750,80 +756,164 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
   Widget _buildTransactionItem(BuildContext context, Transaction transaction) {
     final theme = Theme.of(context);
 
+    // Get expanded state for this transaction
+    final isExpanded = _expandedTransactions[transaction.id] ?? false;
+
     return Card(
       margin: const EdgeInsets.only(bottom: 4),
       elevation: 1,
-      child: Container(
-        color: theme.colorScheme.surface,
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            // Toggle expanded state
+            _expandedTransactions[transaction.id] = !isExpanded;
+          });
+        },
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            border: Border(
-              left: BorderSide(
-                color: transaction.getColor(context),
-                width: 4,
-              ),
-            ),
-          ),
-          child: Row(
+          color: theme.colorScheme.surface,
+          child: Column(
             children: [
-              // Transaction type and description
-              Expanded(
-                flex: 2,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          transaction.getTypeDisplayName(),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      transaction.description ?? '',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey,
+              // Main content (always visible)
+              Container(
+                color: theme.colorScheme.surface,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface,
+                    border: Border(
+                      left: BorderSide(
+                        color: transaction.getColor(context),
+                        width: 4,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                  ],
+                  ),
+                  child: Row(
+                    children: [
+                      // Transaction type and description
+                      Expanded(
+                        flex: 2,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  transaction.getTypeDisplayName(),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              transaction.description ?? '',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Amount and date
+                      Expanded(
+                        flex: 1,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              '${transaction.type == TransactionType.deposit || transaction.type == TransactionType.profit || transaction.type == TransactionType.credit ? '+' : '-'}\$${transaction.amount.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: transaction.getColor(context),
+                                fontSize: 15,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              DateFormat('MM/dd HH:mm')
+                                  .format(transaction.createdAt),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
 
-              // Amount and date
-              Expanded(
-                flex: 1,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      '${transaction.type == TransactionType.deposit || transaction.type == TransactionType.profit || transaction.type == TransactionType.credit ? '+' : '-'}\$${transaction.amount.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: transaction.getColor(context),
-                        fontSize: 15,
+              // Expanded details section (visible when tapped)
+              if (isExpanded)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  color: theme.colorScheme.surface.withOpacity(0.7),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildDetailItem(
+                              context,
+                              'Transaction ID',
+                              '#${transaction.id}',
+                            ),
+                          ),
+                          Expanded(
+                            child: _buildDetailItem(
+                              context,
+                              'Date & Time',
+                              DateFormat('yyyy.MM.dd HH:mm:ss')
+                                  .format(transaction.createdAt),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      DateFormat('MM/dd HH:mm').format(transaction.createdAt),
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey,
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildDetailItem(
+                              context,
+                              'Type',
+                              transaction.getTypeDisplayName(),
+                              valueColor: transaction.getColor(context),
+                            ),
+                          ),
+                          Expanded(
+                            child: _buildDetailItem(
+                              context,
+                              'Amount',
+                              '\$${transaction.amount.toStringAsFixed(2)}',
+                              valueColor: transaction.getColor(context),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
+                      if (transaction.description != null &&
+                          transaction.description!.isNotEmpty)
+                        const SizedBox(height: 8),
+                      if (transaction.description != null &&
+                          transaction.description!.isNotEmpty)
+                        _buildDetailItem(
+                          context,
+                          'Description',
+                          transaction.description!,
+                        ),
+                    ],
+                  ),
                 ),
-              ),
             ],
           ),
         ),
@@ -872,12 +962,24 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
     final isProfitable = trade.profit != null ? trade.profit! >= 0 : false;
     final profitColor = isProfitable ? Colors.green : Colors.red;
 
+    // Format dates
+    final dateFormat = DateFormat('yyyy.MM.dd HH:mm:ss');
+    final openDate = dateFormat.format(trade.openTime);
+    final closeDate =
+        trade.closeTime != null ? dateFormat.format(trade.closeTime!) : '—';
+
+    // Get expanded state for this trade
+    final isExpanded = _expandedTrades[trade.id.hashCode] ?? false;
+
     return Card(
       margin: const EdgeInsets.only(bottom: 4),
       elevation: 1,
       child: InkWell(
         onTap: () {
-          // This could be expanded to show more details if needed
+          setState(() {
+            // Toggle expanded state
+            _expandedTrades[trade.id.hashCode] = !isExpanded;
+          });
         },
         child: Container(
           color: theme.colorScheme.surface,
@@ -997,12 +1099,149 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                 ),
               ),
 
-              // Optional: Add an expandable details section here
-              // similar to what's in trade_page.dart
+              // Expanded details section (visible when tapped)
+              if (isExpanded)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  color: theme.colorScheme.surface.withOpacity(0.7),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildDetailItem(
+                              context,
+                              'Trade ID',
+                              '#${trade.id.toString().padLeft(10, '0')}',
+                            ),
+                          ),
+                          Expanded(
+                            child: _buildDetailItem(
+                              context,
+                              'Open Time',
+                              openDate,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildDetailItem(
+                              context,
+                              'Close Time',
+                              closeDate,
+                            ),
+                          ),
+                          Expanded(
+                            child: _buildDetailItem(
+                              context,
+                              'Duration',
+                              _calculateDuration(
+                                  trade.openTime, trade.closeTime),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (trade.stopLoss != null || trade.takeProfit != null)
+                        const SizedBox(height: 8),
+                      if (trade.stopLoss != null || trade.takeProfit != null)
+                        Row(
+                          children: [
+                            if (trade.stopLoss != null)
+                              Expanded(
+                                child: _buildDetailItem(
+                                  context,
+                                  'SL',
+                                  trade.stopLoss!.toStringAsFixed(5),
+                                ),
+                              ),
+                            if (trade.takeProfit != null)
+                              Expanded(
+                                child: _buildDetailItem(
+                                  context,
+                                  'TP',
+                                  trade.takeProfit!.toStringAsFixed(5),
+                                ),
+                              ),
+                          ],
+                        ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildDetailItem(
+                              context,
+                              'Symbol',
+                              trade.symbolName,
+                            ),
+                          ),
+                          // Expanded(
+                          //   child: _buildDetailItem(
+                          //     context,
+                          //     'Leverage',
+                          //     '${trade.leverage}x',
+                          //   ),
+                          // ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  // Helper method to calculate duration between open and close time
+  String _calculateDuration(DateTime openTime, DateTime? closeTime) {
+    if (closeTime == null) return '—';
+
+    final duration = closeTime.difference(openTime);
+
+    if (duration.inDays > 0) {
+      return '${duration.inDays}d ${duration.inHours % 24}h';
+    } else if (duration.inHours > 0) {
+      return '${duration.inHours}h ${duration.inMinutes % 60}m';
+    } else if (duration.inMinutes > 0) {
+      return '${duration.inMinutes}m ${duration.inSeconds % 60}s';
+    } else {
+      return '${duration.inSeconds}s';
+    }
+  }
+
+  // Helper method to build detail items
+  Widget _buildDetailItem(
+    BuildContext context,
+    String label,
+    String value, {
+    Color? valueColor,
+  }) {
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurface.withOpacity(0.7),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w500,
+            color: valueColor,
+          ),
+        ),
+      ],
     );
   }
 

@@ -143,6 +143,9 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
       });
     }
 
+    // Check if the form is valid for enabling/disabling buttons
+    final bool isFormValid = _isFormValid();
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -187,10 +190,9 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
                 ref.read(tradeFormProvider.notifier).setTakeProfit(null);
                 ref.read(tradeFormProvider.notifier).setTrailingStopLoss(null);
 
-                // Set suggested values based on current order type
+                // Force UI update
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   setState(() {});
-                  _updateSuggestedValues();
                 });
               },
               style: ElevatedButton.styleFrom(
@@ -324,12 +326,12 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
                                 .read(tradeFormProvider.notifier)
                                 .setVolume(volume);
                           } else {
-                            // Set a default minimal volume if input is invalid
-                            _volumeController.text = '0.01';
-                            ref
-                                .read(tradeFormProvider.notifier)
-                                .setVolume(0.01);
+                            // Set volume to 0 or a very small value to trigger validation failure
+                            ref.read(tradeFormProvider.notifier).setVolume(0);
                           }
+
+                          // Update UI to refresh button state
+                          setState(() {});
                         },
                       ),
                     ],
@@ -491,18 +493,22 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
                       children: [
                         Expanded(
                           child: ElevatedButton(
-                            onPressed: () {
-                              setState(() {
-                                _selectedTradeType = TradeType.buy;
-                              });
-                              _executeTrade(context);
-                            },
+                            onPressed: isFormValid
+                                ? () {
+                                    setState(() {
+                                      _selectedTradeType = TradeType.buy;
+                                    });
+                                    _executeTrade(context);
+                                  }
+                                : null,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: theme.colorScheme.primary,
                               foregroundColor: Colors.white,
                               padding: EdgeInsets.symmetric(
                                 vertical: isMobile ? 12 : 16,
                               ),
+                              disabledBackgroundColor:
+                                  theme.colorScheme.primary.withOpacity(0.5),
                             ),
                             child: Text(
                               'BUY',
@@ -516,18 +522,22 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: ElevatedButton(
-                            onPressed: () {
-                              setState(() {
-                                _selectedTradeType = TradeType.sell;
-                              });
-                              _executeTrade(context);
-                            },
+                            onPressed: isFormValid
+                                ? () {
+                                    setState(() {
+                                      _selectedTradeType = TradeType.sell;
+                                    });
+                                    _executeTrade(context);
+                                  }
+                                : null,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.red,
                               foregroundColor: Colors.white,
                               padding: EdgeInsets.symmetric(
                                 vertical: isMobile ? 12 : 16,
                               ),
+                              disabledBackgroundColor:
+                                  Colors.red.withOpacity(0.5),
                             ),
                             child: Text(
                               'SELL',
@@ -545,13 +555,19 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: () => _executeTrade(context),
+                        onPressed:
+                            isFormValid ? () => _executeTrade(context) : null,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: _selectedTradeType == TradeType.buy
                               ? theme.colorScheme.primary
                               : Colors.red,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 12),
+                          disabledBackgroundColor:
+                              (_selectedTradeType == TradeType.buy
+                                      ? theme.colorScheme.primary
+                                      : Colors.red)
+                                  .withOpacity(0.5),
                         ),
                         child: Text(
                           _getExecuteButtonText(),
@@ -705,12 +721,8 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
     _stopLossController.clear();
     _takeProfitController.clear();
     _trailingStopController.clear();
-
-    // Set suggested values for the new order type
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      setState(() {});
-      _updateSuggestedValues();
-    });
+    _limitPriceController.clear();
+    _stopPriceController.clear();
   }
 
   Widget _buildPriceField(
@@ -798,6 +810,9 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
                       } else if (controller == _stopPriceController) {
                         ref.read(tradeFormProvider.notifier).setStopPrice(null);
                       }
+
+                      // Update UI to refresh button state
+                      setState(() {});
                     },
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
@@ -825,9 +840,8 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
               onChanged(parsedValue);
             }
 
-            setState(() {
-              print('setState called from TextField onChanged');
-            });
+            // Update UI to refresh button state
+            setState(() {});
           },
         ),
       ],
@@ -870,6 +884,17 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
 
     // Capture the ScaffoldMessengerState before any async operations
     final scaffoldMessenger = ScaffoldMessenger.of(context);
+
+    // Validate volume
+    if (form.volume <= 0) {
+      scaffoldMessenger.showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a valid volume greater than 0'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
 
     // Validate required fields based on order type
     if (_selectedOrderType == OrderType.limit && form.limitPrice == null) {
@@ -961,6 +986,73 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
       }
     }
 
+    // Validate stop loss for buy orders
+    if (stopLoss != null && _selectedTradeType == TradeType.buy) {
+      if (stopLoss >= widget.currentPrice) {
+        scaffoldMessenger.showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Stop Loss for Buy orders must be below the current price'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
+    // Validate stop loss for sell orders
+    if (stopLoss != null && _selectedTradeType == TradeType.sell) {
+      if (stopLoss <= widget.currentPrice) {
+        scaffoldMessenger.showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Stop Loss for Sell orders must be above the current price'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
+    // Validate take profit for buy orders
+    if (takeProfit != null && _selectedTradeType == TradeType.buy) {
+      if (takeProfit <= widget.currentPrice) {
+        scaffoldMessenger.showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Take Profit for Buy orders must be above the current price'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
+    // Validate take profit for sell orders
+    if (takeProfit != null && _selectedTradeType == TradeType.sell) {
+      if (takeProfit >= widget.currentPrice) {
+        scaffoldMessenger.showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Take Profit for Sell orders must be below the current price'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
+    // Validate trailing stop loss
+    if (trailingStopLoss != null && trailingStopLoss <= 0) {
+      scaffoldMessenger.showSnackBar(
+        const SnackBar(
+          content: Text('Trailing Stop Loss must be greater than 0'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     final params = CreateTradeParams(
       symbolCode: widget.symbol.code,
       symbolName: widget.symbol.name,
@@ -1038,35 +1130,105 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
     }
   }
 
-  // Helper method to update suggested values based on trade type and order type
-  void _updateSuggestedValues() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_selectedOrderType == OrderType.limit) {
-        double suggestedPrice = _selectedTradeType == TradeType.buy
-            ? widget.currentPrice * 0.98 // Buy Limit below current price
-            : widget.currentPrice * 1.02; // Sell Limit above current price
-        _limitPriceController.text = suggestedPrice.toStringAsFixed(2);
-        ref.read(tradeFormProvider.notifier).setLimitPrice(suggestedPrice);
-      } else if (_selectedOrderType == OrderType.stopLimit) {
-        double suggestedStopPrice = _selectedTradeType == TradeType.buy
-            ? widget.currentPrice * 1.02 // Buy Stop above current price
-            : widget.currentPrice * 0.98; // Sell Stop below current price
-        _stopPriceController.text = suggestedStopPrice.toStringAsFixed(2);
-        ref.read(tradeFormProvider.notifier).setStopPrice(suggestedStopPrice);
+  // Helper method to check if the form is valid for enabling/disabling buttons
+  bool _isFormValid() {
+    // Get the current form values
+    final form = ref.read(tradeFormProvider);
 
-        double suggestedLimitPrice = _selectedTradeType == TradeType.buy
-            ? suggestedStopPrice * 0.99 // Buy Limit below Stop
-            : suggestedStopPrice * 1.01; // Sell Limit above Stop
-        _limitPriceController.text = suggestedLimitPrice.toStringAsFixed(2);
-        ref.read(tradeFormProvider.notifier).setLimitPrice(suggestedLimitPrice);
+    // Check volume
+    if (form.volume <= 0) {
+      return false;
+    }
+
+    // Get values from text fields
+    final double? stopLoss = _stopLossController.text.isNotEmpty
+        ? double.tryParse(_stopLossController.text)
+        : null;
+
+    final double? takeProfit = _takeProfitController.text.isNotEmpty
+        ? double.tryParse(_takeProfitController.text)
+        : null;
+
+    final double? trailingStopLoss = _trailingStopController.text.isNotEmpty
+        ? double.tryParse(_trailingStopController.text)
+        : null;
+
+    // Check required fields based on order type
+    if (_selectedOrderType == OrderType.limit && form.limitPrice == null) {
+      return false;
+    }
+
+    if (_selectedOrderType == OrderType.stopLimit &&
+        (form.stopPrice == null || form.limitPrice == null)) {
+      return false;
+    }
+
+    // Validate price levels for limit orders
+    if (_selectedOrderType == OrderType.limit) {
+      bool isValidPrice = _selectedTradeType == TradeType.buy
+          ? form.limitPrice! < widget.currentPrice
+          : form.limitPrice! > widget.currentPrice;
+
+      if (!isValidPrice) {
+        return false;
+      }
+    }
+
+    // Validate price levels for stop limit orders
+    if (_selectedOrderType == OrderType.stopLimit) {
+      // Check if stop price is in the right direction
+      bool isValidStopPrice = _selectedTradeType == TradeType.buy
+          ? form.stopPrice! > widget.currentPrice
+          : form.stopPrice! < widget.currentPrice;
+
+      if (!isValidStopPrice) {
+        return false;
       }
 
-      // Remove the stop loss and take profit suggestions
-      // DO NOT set default values for SL/TP
-      // Keep these fields empty by default
+      // Check if limit price is in the right direction relative to stop price
+      bool isValidLimitPrice = _selectedTradeType == TradeType.buy
+          ? form.limitPrice! < form.stopPrice!
+          : form.limitPrice! > form.stopPrice!;
 
-      // Force UI update
-      setState(() {});
-    });
+      if (!isValidLimitPrice) {
+        return false;
+      }
+    }
+
+    // Validate stop loss if provided
+    if (stopLoss != null) {
+      if (_selectedTradeType == TradeType.buy) {
+        if (stopLoss >= widget.currentPrice) {
+          return false;
+        }
+      } else {
+        // sell
+        if (stopLoss <= widget.currentPrice) {
+          return false;
+        }
+      }
+    }
+
+    // Validate take profit if provided
+    if (takeProfit != null) {
+      if (_selectedTradeType == TradeType.buy) {
+        if (takeProfit <= widget.currentPrice) {
+          return false;
+        }
+      } else {
+        // sell
+        if (takeProfit >= widget.currentPrice) {
+          return false;
+        }
+      }
+    }
+
+    // Validate trailing stop loss if provided
+    if (trailingStopLoss != null && trailingStopLoss <= 0) {
+      return false;
+    }
+
+    // If all validations pass
+    return true;
   }
 }

@@ -340,7 +340,6 @@ class TradePage extends ConsumerWidget {
             tabs: const [
               Tab(text: 'Open Positions'),
               Tab(text: 'Pending Orders'),
-              Tab(text: 'Trade History'),
             ],
             labelColor: theme.colorScheme.primary,
             unselectedLabelColor: theme.colorScheme.onSurface.withOpacity(0.7),
@@ -387,29 +386,6 @@ class TradePage extends ConsumerWidget {
                 }
 
                 return _buildPendingOrdersList(context, pendingTrades, ref);
-              },
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) => Center(
-                child: Text('Error: ${error.toString()}'),
-              ),
-            ),
-
-            // Trade History Tab
-            filteredTradesAsync.when(
-              data: (trades) {
-                final closedTrades = trades
-                    .where((t) => t.status == TradeStatus.closed)
-                    .toList();
-
-                if (closedTrades.isEmpty) {
-                  return _buildEmptyState(
-                    context,
-                    'No Trade History',
-                    'Your closed trades will appear here',
-                  );
-                }
-
-                return _buildTradesList(context, closedTrades, false, ref);
               },
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (error, _) => Center(
@@ -465,9 +441,7 @@ class TradePage extends ConsumerWidget {
         itemCount: trades.length,
         itemBuilder: (context, index) {
           final trade = trades[index];
-          return isOpenTrades
-              ? MetaTraderStyleTradeCard(trade: trade)
-              : MetaTraderStyleHistoryCard(trade: trade);
+          return MetaTraderStyleTradeCard(trade: trade);
         },
       ),
     );
@@ -930,7 +904,7 @@ class _MetaTraderStyleTradeCardState
     // Store a reference to the ScaffoldMessengerState to avoid using context after widget disposal
     final scaffoldMessenger = ScaffoldMessenger.of(context);
 
-    // Get current price for suggesting SL/TP
+    // Get current price for calculating profit
     final marketDataAsync = ref.read(marketDataProvider(trade.symbolCode));
 
     marketDataAsync.whenData((marketData) {
@@ -943,15 +917,6 @@ class _MetaTraderStyleTradeCardState
       final takeProfitController = TextEditingController(
         text: trade.takeProfit?.toStringAsFixed(2) ?? '',
       );
-
-      // Suggested values based on current price and trade type
-      final suggestedSL = trade.type == TradeType.buy
-          ? currentPrice * 0.99 // 1% below for buy
-          : currentPrice * 1.01; // 1% above for sell
-
-      final suggestedTP = trade.type == TradeType.buy
-          ? currentPrice * 1.01 // 1% above for buy
-          : currentPrice * 0.99; // 1% below for sell
 
       showDialog(
         context: context,
@@ -981,26 +946,7 @@ class _MetaTraderStyleTradeCardState
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text('Stop Loss:'),
-                            InkWell(
-                              onTap: () {
-                                stopLossController.text =
-                                    suggestedSL.toStringAsFixed(2);
-                              },
-                              child: Text(
-                                'Suggest',
-                                style: TextStyle(
-                                  color: theme.colorScheme.primary,
-                                  decoration: TextDecoration.underline,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                        Text('Stop Loss:'),
                         const SizedBox(height: 4),
                         TextField(
                           controller: stopLossController,
@@ -1038,26 +984,7 @@ class _MetaTraderStyleTradeCardState
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text('Take Profit:'),
-                            InkWell(
-                              onTap: () {
-                                takeProfitController.text =
-                                    suggestedTP.toStringAsFixed(2);
-                              },
-                              child: Text(
-                                'Suggest',
-                                style: TextStyle(
-                                  color: theme.colorScheme.primary,
-                                  decoration: TextDecoration.underline,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                        Text('Take Profit:'),
                         const SizedBox(height: 4),
                         TextField(
                           controller: takeProfitController,
@@ -1322,6 +1249,9 @@ class _MetaTraderStylePendingOrderCardState
             isExpanded = !isExpanded;
           });
         },
+        onLongPress: () {
+          _showPendingOrderOptionsMenu(context, trade);
+        },
         child: Container(
           color: theme.colorScheme.surface,
           child: Column(
@@ -1459,14 +1389,6 @@ class _MetaTraderStylePendingOrderCardState
                         ],
                       ),
                     ),
-
-                    // Cancel button
-                    IconButton(
-                      icon: const Icon(Icons.close, size: 18),
-                      onPressed: () =>
-                          _showCancelOrderDialog(context, trade, ref),
-                      tooltip: 'Cancel order',
-                    ),
                   ],
                 ),
               ),
@@ -1584,6 +1506,53 @@ class _MetaTraderStylePendingOrderCardState
     );
   }
 
+  void _showPendingOrderOptionsMenu(BuildContext context, Trade trade) {
+    final RenderBox button = context.findRenderObject() as RenderBox;
+    final RenderBox overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox;
+    final RelativeRect position = RelativeRect.fromRect(
+      Rect.fromPoints(
+        button.localToGlobal(Offset.zero, ancestor: overlay),
+        button.localToGlobal(button.size.bottomRight(Offset.zero),
+            ancestor: overlay),
+      ),
+      Offset.zero & overlay.size,
+    );
+
+    showMenu<String>(
+      context: context,
+      position: position,
+      items: [
+        const PopupMenuItem<String>(
+          value: 'modify',
+          child: ListTile(
+            leading: Icon(Icons.edit),
+            title: Text('Modify Order'),
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+          ),
+        ),
+        const PopupMenuItem<String>(
+          value: 'cancel',
+          child: ListTile(
+            leading: Icon(Icons.close),
+            title: Text('Cancel Order'),
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+          ),
+        ),
+      ],
+    ).then((value) {
+      if (value == null) return;
+
+      if (value == 'modify') {
+        _showModifyPendingOrderDialog(context, trade, ref);
+      } else if (value == 'cancel') {
+        _showCancelOrderDialog(context, trade, ref);
+      }
+    });
+  }
+
   void _showCancelOrderDialog(
       BuildContext context, Trade trade, WidgetRef ref) {
     final theme = Theme.of(context);
@@ -1643,394 +1612,490 @@ class _MetaTraderStylePendingOrderCardState
       ),
     );
   }
-}
 
-class MetaTraderStyleHistoryCard extends ConsumerStatefulWidget {
-  final Trade trade;
-
-  const MetaTraderStyleHistoryCard({
-    Key? key,
-    required this.trade,
-  }) : super(key: key);
-
-  @override
-  ConsumerState<MetaTraderStyleHistoryCard> createState() =>
-      _MetaTraderStyleHistoryCardState();
-}
-
-class _MetaTraderStyleHistoryCardState
-    extends ConsumerState<MetaTraderStyleHistoryCard> {
-  bool isExpanded = false;
-
-  @override
-  Widget build(BuildContext context) {
+  void _showModifyPendingOrderDialog(
+      BuildContext context, Trade trade, WidgetRef ref) {
     final theme = Theme.of(context);
-    final trade = widget.trade;
+    final tradeService = ref.read(tradeServiceProvider);
+    final marketDataAsync = ref.read(marketDataProvider(trade.symbolCode));
 
-    // Format dates
-    final dateFormat = DateFormat('yyyy.MM.dd HH:mm:ss');
-    final openDate = dateFormat.format(trade.openTime);
-    final closeDate =
-        trade.closeTime != null ? dateFormat.format(trade.closeTime!) : '—';
+    // Store a reference to the ScaffoldMessengerState to avoid using context after widget disposal
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
 
-    // Calculate profit/loss
-    final isProfitable = trade.profit != null ? trade.profit! >= 0 : false;
-    final profitColor = isProfitable ? Colors.green : Colors.red;
+    marketDataAsync.whenData((marketData) {
+      final currentPrice = marketData.lastPrice;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 4),
-      elevation: 1,
-      child: GestureDetector(
-        onTap: () {
-          setState(() {
-            isExpanded = !isExpanded;
-          });
-        },
-        onLongPress: () {
-          _showHistoryTradeOptionsMenu(context, trade);
-        },
-        child: Container(
-          color: theme.colorScheme.surface,
-          child: Column(
-            children: [
-              // Main row that's always visible
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surface,
-                  border: Border(
-                    left: BorderSide(
-                      color: isProfitable ? Colors.green : Colors.red,
-                      width: 4,
-                    ),
-                  ),
-                ),
-                child: Row(
+      // Controllers for the form fields
+      final volumeController = TextEditingController(
+        text: trade.volume.toStringAsFixed(2),
+      );
+
+      final limitPriceController = TextEditingController(
+        text: trade.limitPrice?.toStringAsFixed(5) ?? '',
+      );
+
+      final stopPriceController = TextEditingController(
+        text: trade.stopPrice?.toStringAsFixed(5) ?? '',
+      );
+
+      final stopLossController = TextEditingController(
+        text: trade.stopLoss?.toStringAsFixed(5) ?? '',
+      );
+
+      final takeProfitController = TextEditingController(
+        text: trade.takeProfit?.toStringAsFixed(5) ?? '',
+      );
+
+      // Determine if it's a limit or stop limit order
+      final isStopLimit = trade.orderType == OrderType.stopLimit;
+
+      showDialog(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setState) {
+            // Function to validate the form
+            bool isFormValid() {
+              // Parse values from controllers
+              final volume = double.tryParse(volumeController.text) ?? 0;
+              final limitPrice = double.tryParse(limitPriceController.text);
+              final stopPrice = double.tryParse(stopPriceController.text);
+              final stopLoss = double.tryParse(stopLossController.text);
+              final takeProfit = double.tryParse(takeProfitController.text);
+
+              // Basic validation
+              if (volume <= 0) return false;
+
+              // Limit price validation
+              if (limitPrice == null) return false;
+
+              // Stop price validation for stop limit orders
+              if (isStopLimit && stopPrice == null) return false;
+
+              // Validate price levels for limit orders
+              if (!isStopLimit) {
+                bool isValidPrice = trade.type == TradeType.buy
+                    ? limitPrice <
+                        currentPrice // Buy Limit must be below current price
+                    : limitPrice >
+                        currentPrice; // Sell Limit must be above current price
+
+                if (!isValidPrice) return false;
+              }
+
+              // Validate price levels for stop limit orders
+              if (isStopLimit) {
+                // Check if stop price is in the right direction
+                bool isValidStopPrice = trade.type == TradeType.buy
+                    ? stopPrice! >
+                        currentPrice // Buy Stop must be above current price
+                    : stopPrice! <
+                        currentPrice; // Sell Stop must be below current price
+
+                if (!isValidStopPrice) return false;
+
+                // Check if limit price is in the right direction relative to stop price
+                bool isValidLimitPrice = trade.type == TradeType.buy
+                    ? limitPrice <
+                        stopPrice // Buy Limit must be below Stop price
+                    : limitPrice >
+                        stopPrice; // Sell Limit must be above Stop price
+
+                if (!isValidLimitPrice) return false;
+              }
+
+              // Validate stop loss if provided
+              if (stopLoss != null) {
+                if (trade.type == TradeType.buy) {
+                  if (stopLoss >= (isStopLimit ? stopPrice! : limitPrice)) {
+                    return false;
+                  }
+                } else {
+                  // sell
+                  if (stopLoss <= (isStopLimit ? stopPrice! : limitPrice)) {
+                    return false;
+                  }
+                }
+              }
+
+              // Validate take profit if provided
+              if (takeProfit != null) {
+                if (trade.type == TradeType.buy) {
+                  if (takeProfit <= (isStopLimit ? stopPrice! : limitPrice)) {
+                    return false;
+                  }
+                } else {
+                  // sell
+                  if (takeProfit >= (isStopLimit ? stopPrice! : limitPrice)) {
+                    return false;
+                  }
+                }
+              }
+
+              return true;
+            }
+
+            return AlertDialog(
+              title: Text('Modify ${trade.symbolCode} Order'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Symbol and type column
-                    Expanded(
-                      flex: 2,
-                      child: Column(
+                    Text(
+                      'Update your ${trade.type == TradeType.buy ? 'buy' : 'sell'} ${isStopLimit ? 'stop limit' : 'limit'} order parameters:',
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Volume field
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Volume *',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        TextField(
+                          controller: volumeController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(
+                                RegExp(r'^\d*\.?\d*')),
+                          ],
+                          decoration: InputDecoration(
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 8,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            hintText: 'Required',
+                          ),
+                          onChanged: (_) => setState(() {}),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Stop Price field (for stop limit orders)
+                    if (isStopLimit) ...[
+                      Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          Text(
+                            'Stop Price *',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
                           Row(
                             children: [
-                              Text(
-                                trade.symbolCode,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
+                              Expanded(
+                                child: TextField(
+                                  controller: stopPriceController,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.allow(
+                                        RegExp(r'^\d*\.?\d*')),
+                                  ],
+                                  decoration: InputDecoration(
+                                    isDense: true,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 8,
+                                    ),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    hintText: 'Required',
+                                    prefixText: '\$',
+                                  ),
+                                  onChanged: (_) => setState(() {}),
                                 ),
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                trade.type == TradeType.buy ? 'buy' : 'sell',
-                                style: TextStyle(
-                                  color: trade.type == TradeType.buy
-                                      ? theme.colorScheme.primary
-                                      : Colors.red,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                trade.volume.toStringAsFixed(2),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w500,
-                                ),
+                                'Current: \$${currentPrice.toStringAsFixed(2)}',
+                                style: theme.textTheme.bodySmall,
                               ),
                             ],
                           ),
-                          const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              Text(
-                                '${trade.entryPrice.toStringAsFixed(5)} → ',
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                              trade.exitPrice != null
-                                  ? Text(
-                                      trade.exitPrice!.toStringAsFixed(5),
-                                      style: const TextStyle(
-                                        fontSize: 13,
-                                      ),
-                                    )
-                                  : const Text('—',
-                                      style: TextStyle(fontSize: 13)),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    // Profit column
-                    Expanded(
-                      flex: 1,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          trade.profit != null
-                              ? Text(
-                                  isProfitable
-                                      ? '+\$${trade.profit!.toStringAsFixed(2)}'
-                                      : '-\$${(-trade.profit!).toStringAsFixed(2)}',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: profitColor,
-                                    fontSize: 15,
-                                  ),
-                                )
-                              : const Text(
-                                  '—',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 15,
-                                  ),
-                                ),
                           const SizedBox(height: 4),
                           Text(
-                            DateFormat('MM/dd HH:mm')
-                                .format(trade.closeTime ?? trade.openTime),
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey,
+                            'Order activation price',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontSize: 10,
+                              fontStyle: FontStyle.italic,
+                              color: theme.textTheme.bodySmall?.color
+                                  ?.withOpacity(0.7),
                             ),
                           ),
                         ],
                       ),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // Limit Price field
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Limit Price *',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: limitPriceController,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                  decimal: true,
+                                ),
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.allow(
+                                      RegExp(r'^\d*\.?\d*')),
+                                ],
+                                decoration: InputDecoration(
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 8,
+                                  ),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  hintText: 'Required',
+                                  prefixText: '\$',
+                                ),
+                                onChanged: (_) => setState(() {}),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Current: \$${currentPrice.toStringAsFixed(2)}',
+                              style: theme.textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          isStopLimit
+                              ? 'Execution price after activation'
+                              : (trade.type == TradeType.buy
+                                  ? 'Buy when price drops to this level'
+                                  : 'Sell when price rises to this level'),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontSize: 10,
+                            fontStyle: FontStyle.italic,
+                            color: theme.textTheme.bodySmall?.color
+                                ?.withOpacity(0.7),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Risk Management section
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Risk Management',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Stop Loss field
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Stop Loss',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                        const SizedBox(height: 4),
+                        TextField(
+                          controller: stopLossController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(
+                                RegExp(r'^\d*\.?\d*')),
+                          ],
+                          decoration: InputDecoration(
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 8,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            hintText: 'Optional',
+                            prefixText: '\$',
+                            suffixIcon: stopLossController.text.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear, size: 16),
+                                    onPressed: () {
+                                      setState(() {
+                                        stopLossController.clear();
+                                      });
+                                    },
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                  )
+                                : null,
+                          ),
+                          onChanged: (_) => setState(() {}),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Take Profit field
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Take Profit',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                        const SizedBox(height: 4),
+                        TextField(
+                          controller: takeProfitController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(
+                                RegExp(r'^\d*\.?\d*')),
+                          ],
+                          decoration: InputDecoration(
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 8,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            hintText: 'Optional',
+                            prefixText: '\$',
+                            suffixIcon: takeProfitController.text.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear, size: 16),
+                                    onPressed: () {
+                                      setState(() {
+                                        takeProfitController.clear();
+                                      });
+                                    },
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                  )
+                                : null,
+                          ),
+                          onChanged: (_) => setState(() {}),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
-
-              // Expanded details section (visible when tapped)
-              if (isExpanded)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  color: theme.colorScheme.surface.withOpacity(0.7),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildDetailItem(
-                              context,
-                              'Trade ID',
-                              '#${trade.id.toString().padLeft(10, '0')}',
-                            ),
-                          ),
-                          Expanded(
-                            child: _buildDetailItem(
-                              context,
-                              'Open Time',
-                              openDate,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildDetailItem(
-                              context,
-                              'Close Time',
-                              closeDate,
-                            ),
-                          ),
-                          Expanded(
-                            child: _buildDetailItem(
-                              context,
-                              'Duration',
-                              _calculateDuration(
-                                  trade.openTime, trade.closeTime),
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (trade.stopLoss != null || trade.takeProfit != null)
-                        const SizedBox(height: 8),
-                      if (trade.stopLoss != null || trade.takeProfit != null)
-                        Row(
-                          children: [
-                            if (trade.stopLoss != null)
-                              Expanded(
-                                child: _buildDetailItem(
-                                  context,
-                                  'SL',
-                                  trade.stopLoss!.toStringAsFixed(5),
-                                ),
-                              ),
-                            if (trade.takeProfit != null)
-                              Expanded(
-                                child: _buildDetailItem(
-                                  context,
-                                  'TP',
-                                  trade.takeProfit!.toStringAsFixed(5),
-                                ),
-                              ),
-                          ],
-                        ),
-                    ],
-                  ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
                 ),
-            ],
-          ),
+                ElevatedButton(
+                  onPressed: isFormValid()
+                      ? () async {
+                          Navigator.of(context).pop();
+
+                          // Parse values
+                          final volume = double.parse(volumeController.text);
+                          final limitPrice =
+                              double.parse(limitPriceController.text);
+                          final stopPrice = isStopLimit
+                              ? double.parse(stopPriceController.text)
+                              : null;
+                          final stopLoss = stopLossController.text.isNotEmpty
+                              ? double.parse(stopLossController.text)
+                              : null;
+                          final takeProfit =
+                              takeProfitController.text.isNotEmpty
+                                  ? double.parse(takeProfitController.text)
+                                  : null;
+
+                          // Show loading
+                          scaffoldMessenger.showSnackBar(
+                            const SnackBar(
+                              content: Text('Updating order...'),
+                              duration: Duration(seconds: 1),
+                            ),
+                          );
+
+                          try {
+                            // Update the pending order
+                            await tradeService.updatePendingOrder(
+                              tradeId: trade.id,
+                              volume: volume,
+                              limitPrice: limitPrice,
+                              stopPrice: stopPrice,
+                              stopLoss: stopLoss,
+                              takeProfit: takeProfit,
+                            );
+
+                            // Show success message
+                            scaffoldMessenger.showSnackBar(
+                              SnackBar(
+                                content:
+                                    const Text('Order updated successfully'),
+                                backgroundColor: theme.colorScheme.primary,
+                              ),
+                            );
+                          } catch (e) {
+                            // Show error message
+                            scaffoldMessenger.showSnackBar(
+                              SnackBar(
+                                content: Text('Error: ${e.toString()}'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: theme.colorScheme.primary,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor:
+                        theme.colorScheme.primary.withOpacity(0.5),
+                  ),
+                  child: const Text('Update Order'),
+                ),
+              ],
+            );
+          },
         ),
-      ),
-    );
-  }
-
-  String _calculateDuration(DateTime openTime, DateTime? closeTime) {
-    if (closeTime == null) return '—';
-
-    final duration = closeTime.difference(openTime);
-
-    if (duration.inDays > 0) {
-      return '${duration.inDays}d ${duration.inHours % 24}h';
-    } else if (duration.inHours > 0) {
-      return '${duration.inHours}h ${duration.inMinutes % 60}m';
-    } else if (duration.inMinutes > 0) {
-      return '${duration.inMinutes}m ${duration.inSeconds % 60}s';
-    } else {
-      return '${duration.inSeconds}s';
-    }
-  }
-
-  Widget _buildDetailItem(
-    BuildContext context,
-    String label,
-    String value, {
-    Color? valueColor,
-  }) {
-    final theme = Theme.of(context);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurface.withOpacity(0.7),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w500,
-            color: valueColor,
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _showHistoryTradeOptionsMenu(BuildContext context, Trade trade) {
-    final RenderBox button = context.findRenderObject() as RenderBox;
-    final RenderBox overlay =
-        Overlay.of(context).context.findRenderObject() as RenderBox;
-    final RelativeRect position = RelativeRect.fromRect(
-      Rect.fromPoints(
-        button.localToGlobal(Offset.zero, ancestor: overlay),
-        button.localToGlobal(button.size.bottomRight(Offset.zero),
-            ancestor: overlay),
-      ),
-      Offset.zero & overlay.size,
-    );
-
-    showMenu<String>(
-      context: context,
-      position: position,
-      items: [
-        const PopupMenuItem<String>(
-          value: 'details',
-          child: ListTile(
-            leading: Icon(Icons.info_outline),
-            title: Text('View Details'),
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-          ),
-        ),
-        const PopupMenuItem<String>(
-          value: 'duplicate',
-          child: ListTile(
-            leading: Icon(Icons.copy),
-            title: Text('Duplicate Trade'),
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-          ),
-        ),
-      ],
-    ).then((value) {
-      if (value == null) return;
-
-      if (value == 'details') {
-        setState(() {
-          isExpanded = true;
-        });
-      } else if (value == 'duplicate') {
-        _duplicateHistoryTrade(context, trade);
-      }
+      );
     });
-  }
-
-  void _duplicateHistoryTrade(BuildContext context, Trade trade) {
-    // Create a new trade with the same parameters
-    final tradeService = ref.read(tradeServiceProvider);
-
-    // Show confirmation dialog
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Duplicate Trade'),
-        content: Text(
-            'Do you want to create a new ${trade.type == TradeType.buy ? "Buy" : "Sell"} order for ${trade.symbolCode} with the same parameters?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-
-              // Create a new pending order with the same parameters
-              tradeService
-                  .createTrade(
-                symbolCode: trade.symbolCode,
-                symbolName: trade.symbolName,
-                type: trade.type,
-                volume: trade.volume,
-                leverage: trade.leverage,
-                entryPrice: trade.entryPrice,
-                orderType: OrderType.limit, // Make it a limit order
-                limitPrice: trade.entryPrice,
-                stopLoss: trade.stopLoss,
-                takeProfit: trade.takeProfit,
-              )
-                  .then((_) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Pending order created')),
-                );
-                // Refresh trades list
-                ref.refresh(tradesProvider);
-              }).catchError((error) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Error: ${error.toString()}')),
-                );
-              });
-            },
-            child: const Text('Create'),
-          ),
-        ],
-      ),
-    );
   }
 }

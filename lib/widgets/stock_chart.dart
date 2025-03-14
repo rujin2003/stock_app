@@ -34,7 +34,7 @@ class _StockChartState extends ConsumerState<StockChart> {
       enableMouseWheelZooming: true,
       enableSelectionZooming: true,
       zoomMode: ZoomMode.x, // Ensure zooming only works on x-axis
-      maximumZoomLevel: 0.3,
+      maximumZoomLevel: 0.05, // Changed from 0.3 to 0.05 for deeper zoom
     );
   }
 

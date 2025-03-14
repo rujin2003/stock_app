@@ -21,42 +21,49 @@ class ChartsPage extends ConsumerWidget {
     // Watch this symbol for SL/TP triggers
     ref.watch(symbolWatcherProvider(selectedSymbol.code));
 
-    // Get the current price from the market data provider
-    final marketDataAsync = ref.watch(marketDataProvider(selectedSymbol.code));
+    // Move the market data watch into the trade buttons section only
+    // This prevents the entire widget tree from rebuilding when market data updates
 
     return Scaffold(
       body: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16.0),
         child: Column(
           children: [
-            // Trade buttons section
-            marketDataAsync.when(
-              data: (marketData) {
-                final currentPrice = marketData.lastPrice;
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8.0),
-                  child: TradeButtons(
-                    symbol: selectedSymbol,
-                    currentPrice: currentPrice,
+            // Trade buttons section - isolated with Consumer
+            Consumer(
+              builder: (context, ref, child) {
+                final marketDataAsync =
+                    ref.watch(marketDataProvider(selectedSymbol.code));
+
+                return marketDataAsync.when(
+                  data: (marketData) {
+                    final currentPrice = marketData.lastPrice;
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8.0),
+                      child: TradeButtons(
+                        symbol: selectedSymbol,
+                        currentPrice: currentPrice,
+                      ),
+                    );
+                  },
+                  loading: () => const SizedBox(
+                      height: 80,
+                      child: Center(child: CircularProgressIndicator())),
+                  error: (error, stack) => SizedBox(
+                    height: 80,
+                    child: Center(
+                      child: Text(
+                        'Error loading market data',
+                        style: TextStyle(
+                            color: Theme.of(context).colorScheme.error),
+                      ),
+                    ),
                   ),
                 );
               },
-              loading: () => const SizedBox(
-                  height: 80,
-                  child: Center(child: CircularProgressIndicator())),
-              error: (error, stack) => SizedBox(
-                height: 80,
-                child: Center(
-                  child: Text(
-                    'Error loading market data',
-                    style:
-                        TextStyle(color: Theme.of(context).colorScheme.error),
-                  ),
-                ),
-              ),
             ),
 
-            // Chart section
+            // Chart section - now won't rebuild when market data changes
             Expanded(
               child: StockChart(
                 symbol: selectedSymbol,

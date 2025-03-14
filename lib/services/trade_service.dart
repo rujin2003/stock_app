@@ -212,6 +212,51 @@ class TradeService {
     return Trade.fromJson(response);
   }
 
+  // Update a pending order
+  Future<Trade> updatePendingOrder({
+    required String tradeId,
+    required double volume,
+    required double limitPrice,
+    double? stopPrice,
+    double? stopLoss,
+    double? takeProfit,
+  }) async {
+    // First, check if the order exists and is pending
+    final checkResponse = await _supabase
+        .from('trades')
+        .select()
+        .eq('id', tradeId)
+        .eq('status', 'pending')
+        .single();
+
+    final updateData = <String, dynamic>{
+      'volume': volume,
+      'limit_price': limitPrice,
+    };
+
+    if (stopPrice != null) {
+      updateData['stop_price'] = stopPrice;
+    }
+
+    if (stopLoss != null) {
+      updateData['stop_loss'] = stopLoss;
+    }
+
+    if (takeProfit != null) {
+      updateData['take_profit'] = takeProfit;
+    }
+
+    final response = await _supabase
+        .from('trades')
+        .update(updateData)
+        .eq('id', tradeId)
+        .eq('status', 'pending')
+        .select()
+        .single();
+
+    return Trade.fromJson(response);
+  }
+
   // Cancel a pending order
   Future<void> cancelOrder(String orderId) async {
     // First, check if the order exists and is pending
