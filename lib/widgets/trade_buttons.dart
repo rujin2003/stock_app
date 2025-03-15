@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -47,41 +49,40 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
 
     // Add listeners to all controllers to update UI when text changes
     _stopLossController.addListener(() {
-      print('Stop Loss controller changed: "${_stopLossController.text}"');
+      log('Stop Loss controller changed: "${_stopLossController.text}"');
       _updateUI();
     });
 
     _takeProfitController.addListener(() {
-      print('Take Profit controller changed: "${_takeProfitController.text}"');
+      log('Take Profit controller changed: "${_takeProfitController.text}"');
       _updateUI();
     });
 
     _volumeController.addListener(() {
-      print('Volume controller changed: "${_volumeController.text}"');
+      log('Volume controller changed: "${_volumeController.text}"');
       _updateUI();
     });
 
     _limitPriceController.addListener(() {
-      print('Limit Price controller changed: "${_limitPriceController.text}"');
+      log('Limit Price controller changed: "${_limitPriceController.text}"');
       _updateUI();
     });
 
     _stopPriceController.addListener(() {
-      print('Stop Price controller changed: "${_stopPriceController.text}"');
+      log('Stop Price controller changed: "${_stopPriceController.text}"');
       _updateUI();
     });
 
     _trailingStopController.addListener(() {
-      print(
-          'Trailing Stop controller changed: "${_trailingStopController.text}"');
+      log('Trailing Stop controller changed: "${_trailingStopController.text}"');
       _updateUI();
     });
   }
 
   void _updateUI() {
-    print('_updateUI called');
+    log('_updateUI called');
     setState(() {
-      print('setState called from _updateUI');
+      log('setState called from _updateUI');
     });
   }
 
@@ -89,27 +90,27 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
   void dispose() {
     // Remove listeners before disposing controllers
     _stopLossController.removeListener(() {
-      print('Stop Loss controller removed');
+      log('Stop Loss controller removed');
       _updateUI();
     });
     _takeProfitController.removeListener(() {
-      print('Take Profit controller removed');
+      log('Take Profit controller removed');
       _updateUI();
     });
     _volumeController.removeListener(() {
-      print('Volume controller removed');
+      log('Volume controller removed');
       _updateUI();
     });
     _limitPriceController.removeListener(() {
-      print('Limit Price controller removed');
+      log('Limit Price controller removed');
       _updateUI();
     });
     _stopPriceController.removeListener(() {
-      print('Stop Price controller removed');
+      log('Stop Price controller removed');
       _updateUI();
     });
     _trailingStopController.removeListener(() {
-      print('Trailing Stop controller removed');
+      log('Trailing Stop controller removed');
       _updateUI();
     });
 
@@ -683,7 +684,7 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
       suffix = 'stop_limit';
     }
 
-    return '${prefix}_${suffix}';
+    return '${prefix}_$suffix';
   }
 
   // Helper method to parse and set the order type value
@@ -860,8 +861,6 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
         return _selectedTradeType == TradeType.buy
             ? 'PLACE BUY STOP LIMIT'
             : 'PLACE SELL STOP LIMIT';
-      default:
-        return 'EXECUTE';
     }
   }
 
@@ -1125,8 +1124,6 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
         return 'Limit';
       case OrderType.stopLimit:
         return 'Stop Limit';
-      default:
-        return '';
     }
   }
 

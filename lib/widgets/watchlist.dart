@@ -147,17 +147,6 @@ class Watchlist extends ConsumerWidget {
     );
   }
 
-  Widget _buildHeaderItem(String label, ThemeData theme) {
-    return Text(
-      label,
-      style: TextStyle(
-        fontSize: 11,
-        fontWeight: FontWeight.bold,
-        color: theme.colorScheme.secondary,
-      ),
-    );
-  }
-
   void _openSymbolSearch(BuildContext context) {
     final isDesktop = MediaQuery.of(context).size.width > 600;
     if (isDesktop) {

@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 import '../providers/time_filter_provider.dart' hide DateTimeRange;
 
 class TimeFilterDropdown extends ConsumerWidget {
-  const TimeFilterDropdown({Key? key}) : super(key: key);
+  const TimeFilterDropdown({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

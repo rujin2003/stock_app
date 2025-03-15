@@ -21,9 +21,9 @@ class MarketDataTile extends ConsumerWidget {
   final Symbol symbol;
 
   const MarketDataTile({
-    Key? key,
+    super.key,
     required this.symbol,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -289,71 +289,6 @@ class MarketDataTile extends ConsumerWidget {
               ],
             ),
           ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTypeIcon(String type) {
-    IconData iconData;
-    Color color;
-
-    switch (type.toLowerCase()) {
-      case 'stock':
-        iconData = Icons.business;
-        color = Colors.blue;
-        break;
-      case 'forex':
-        iconData = Icons.currency_exchange;
-        color = Colors.green;
-        break;
-      case 'indices':
-        iconData = Icons.show_chart;
-        color = Colors.purple;
-        break;
-      case 'crypto':
-        iconData = Icons.currency_bitcoin;
-        color = Colors.orange;
-        break;
-      default:
-        iconData = Icons.bar_chart;
-        color = Colors.grey;
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Icon(
-        iconData,
-        size: 12,
-        color: color,
-      ),
-    );
-  }
-
-  Widget _buildCompactOHLCItem(String label, String value, ThemeData theme,
-      {bool isLast = false, Color? color}) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          label,
-          style: theme.textTheme.bodySmall?.copyWith(
-            fontSize: 10,
-            color: theme.textTheme.bodySmall?.color?.withOpacity(0.7),
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          style: theme.textTheme.bodySmall?.copyWith(
-            fontSize: 10,
-            fontWeight: isLast ? FontWeight.bold : FontWeight.normal,
-            color: color,
-          ),
         ),
       ],
     );

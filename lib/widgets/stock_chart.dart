@@ -366,9 +366,6 @@ class _StockChartState extends ConsumerState<StockChart> {
         dateFormat = isMobile ? DateFormat.MMMd() : DateFormat.yMMMd();
         intervalType = DateTimeIntervalType.months;
         break;
-      default:
-        dateFormat = isMobile ? DateFormat.Md() : DateFormat.yMd();
-        intervalType = DateTimeIntervalType.auto;
     }
 
     return SfCartesianChart(
@@ -466,8 +463,6 @@ class _StockChartState extends ConsumerState<StockChart> {
         return 26; // Show last 26 weeks (half year)
       case KLineType.oneMonth:
         return 12; // Show last 12 months
-      default:
-        return 30;
     }
   }
 }

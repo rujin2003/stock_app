@@ -105,12 +105,11 @@ final totalProfitLossProvider = Provider<AsyncValue<double>>((ref) {
 });
 
 class TradePage extends ConsumerWidget {
-  const TradePage({Key? key}) : super(key: key);
+  const TradePage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final isMobile = ResponsiveLayout.isMobile(context);
     final filteredTradesAsync = ref.watch(filteredTradesProvider);
     final totalProfitLossAsync = ref.watch(totalProfitLossProvider);
     final accountBalanceAsync = ref.watch(accountBalanceProvider);
@@ -428,7 +427,6 @@ class TradePage extends ConsumerWidget {
 
   Widget _buildTradesList(BuildContext context, List<Trade> trades,
       bool isOpenTrades, WidgetRef ref) {
-    final theme = Theme.of(context);
     final isMobile = ResponsiveLayout.isMobile(context);
 
     return RefreshIndicator(

@@ -1,12 +1,14 @@
 import 'dart:async';
-import 'dart:math';
+import 'dart:developer';
+import 'dart:math' as math;
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/trade.dart';
 import '../services/account_service.dart';
 
 class TradeService {
   final SupabaseClient _supabase = Supabase.instance.client;
-  final Random _random = Random();
+  final math.Random _random = math.Random();
   final AccountService _accountService = AccountService();
 
   // Generate a 10-digit numeric ID
@@ -109,7 +111,7 @@ class TradeService {
             value: userId,
           ),
           callback: (payload) async {
-            print('Received trade update: ${payload.eventType}');
+            log('Received trade update: ${payload.eventType}');
 
             // Fetch the updated list of trades
             try {
@@ -118,7 +120,7 @@ class TradeService {
                 controller.add(trades);
               }
             } catch (e) {
-              print('Error fetching trades after update: $e');
+              log('Error fetching trades after update: $e');
               if (!controller.isClosed) {
                 controller.addError(e);
               }
@@ -221,14 +223,6 @@ class TradeService {
     double? stopLoss,
     double? takeProfit,
   }) async {
-    // First, check if the order exists and is pending
-    final checkResponse = await _supabase
-        .from('trades')
-        .select()
-        .eq('id', tradeId)
-        .eq('status', 'pending')
-        .single();
-
     final updateData = <String, dynamic>{
       'volume': volume,
       'limit_price': limitPrice,
@@ -259,14 +253,6 @@ class TradeService {
 
   // Cancel a pending order
   Future<void> cancelOrder(String orderId) async {
-    // First, check if the order exists and is pending
-    final response = await _supabase
-        .from('trades')
-        .select()
-        .eq('id', orderId)
-        .eq('status', 'pending')
-        .single();
-
     // Delete the pending order
     await _supabase
         .from('trades')
@@ -347,7 +333,7 @@ class TradeService {
       String symbolCode, double currentPrice) async {
     final userId = _supabase.auth.currentUser!.id;
 
-    print('Checking trades for $symbolCode at price $currentPrice');
+    log('Checking trades for $symbolCode at price $currentPrice');
 
     try {
       final openTrades = await _supabase
@@ -357,13 +343,12 @@ class TradeService {
           .eq('symbol_code', symbolCode)
           .eq('status', 'open');
 
-      print('Found ${openTrades.length} open trades for $symbolCode');
+      log('Found ${openTrades.length} open trades for $symbolCode');
 
       for (final tradeJson in openTrades) {
         try {
           final trade = Trade.fromJson(tradeJson);
-          print(
-              'Checking trade ${trade.id}: SL=${trade.stopLoss}, TP=${trade.takeProfit}, type=${trade.type}');
+          log('Checking trade ${trade.id}: SL=${trade.stopLoss}, TP=${trade.takeProfit}, type=${trade.type}');
 
           // Check stop loss
           if (trade.stopLoss != null) {
@@ -371,22 +356,20 @@ class TradeService {
                 ? currentPrice <= trade.stopLoss!
                 : currentPrice >= trade.stopLoss!;
 
-            print(
-                'SL check: $stopLossTriggered (current=$currentPrice, SL=${trade.stopLoss}, type=${trade.type})');
+            log('SL check: $stopLossTriggered (current=$currentPrice, SL=${trade.stopLoss}, type=${trade.type})');
 
             if (stopLossTriggered) {
-              print('Closing trade ${trade.id} due to SL hit');
+              log('Closing trade ${trade.id} due to SL hit');
               try {
                 await closeTrade(
                   tradeId: trade.id,
                   exitPrice: trade.stopLoss!,
                   profit: trade.calculateProfit(trade.stopLoss!),
                 );
-                print('Successfully closed trade ${trade.id} due to SL hit');
+                log('Successfully closed trade ${trade.id} due to SL hit');
                 continue;
               } catch (closeError) {
-                print(
-                    'Error closing trade ${trade.id} due to SL hit: $closeError');
+                log('Error closing trade ${trade.id} due to SL hit: $closeError');
               }
             }
           }
@@ -397,30 +380,28 @@ class TradeService {
                 ? currentPrice >= trade.takeProfit!
                 : currentPrice <= trade.takeProfit!;
 
-            print(
-                'TP check: $takeProfitTriggered (current=$currentPrice, TP=${trade.takeProfit}, type=${trade.type})');
+            log('TP check: $takeProfitTriggered (current=$currentPrice, TP=${trade.takeProfit}, type=${trade.type})');
 
             if (takeProfitTriggered) {
-              print('Closing trade ${trade.id} due to TP hit');
+              log('Closing trade ${trade.id} due to TP hit');
               try {
                 await closeTrade(
                   tradeId: trade.id,
                   exitPrice: trade.takeProfit!,
                   profit: trade.calculateProfit(trade.takeProfit!),
                 );
-                print('Successfully closed trade ${trade.id} due to TP hit');
+                log('Successfully closed trade ${trade.id} due to TP hit');
               } catch (closeError) {
-                print(
-                    'Error closing trade ${trade.id} due to TP hit: $closeError');
+                log('Error closing trade ${trade.id} due to TP hit: $closeError');
               }
             }
           }
         } catch (tradeError) {
-          print('Error processing trade: $tradeError');
+          log('Error processing trade: $tradeError');
         }
       }
     } catch (e) {
-      print('Error fetching open trades for $symbolCode: $e');
+      log('Error fetching open trades for $symbolCode: $e');
     }
   }
 
@@ -429,7 +410,7 @@ class TradeService {
       String symbolCode, double currentPrice) async {
     final userId = _supabase.auth.currentUser!.id;
 
-    print('Checking pending orders for $symbolCode at price $currentPrice');
+    log('Checking pending orders for $symbolCode at price $currentPrice');
 
     try {
       final pendingOrders = await _supabase
@@ -439,13 +420,12 @@ class TradeService {
           .eq('symbol_code', symbolCode)
           .eq('status', 'pending');
 
-      print('Found ${pendingOrders.length} pending orders for $symbolCode');
+      log('Found ${pendingOrders.length} pending orders for $symbolCode');
 
       for (final orderJson in pendingOrders) {
         try {
           final order = Trade.fromJson(orderJson);
-          print(
-              'Checking order ${order.id}: Type=${order.type}, OrderType=${order.orderType}');
+          log('Checking order ${order.id}: Type=${order.type}, OrderType=${order.orderType}');
 
           bool shouldActivate = false;
 
@@ -469,7 +449,7 @@ class TradeService {
           }
 
           if (shouldActivate) {
-            print('Activating order ${order.id}');
+            log('Activating order ${order.id}');
 
             // Update the order to open status
             await _supabase.from('trades').update({
@@ -483,14 +463,14 @@ class TradeService {
             // Update account metrics after activating an order
             await _accountService.updateAccountMetrics();
 
-            print('Successfully activated order ${order.id}');
+            log('Successfully activated order ${order.id}');
           }
         } catch (orderError) {
-          print('Error processing pending order: $orderError');
+          log('Error processing pending order: $orderError');
         }
       }
     } catch (e) {
-      print('Error fetching pending orders for $symbolCode: $e');
+      log('Error fetching pending orders for $symbolCode: $e');
     }
   }
 }

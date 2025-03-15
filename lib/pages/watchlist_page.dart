@@ -4,7 +4,7 @@ import '../widgets/watchlist.dart';
 import '../widgets/symbol_search.dart';
 
 class WatchlistPage extends ConsumerWidget {
-  const WatchlistPage({Key? key}) : super(key: key);
+  const WatchlistPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

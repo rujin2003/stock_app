@@ -96,9 +96,7 @@ class Transaction {
       amount: json['amount'].toDouble(),
       description: json['description'],
       // Handle relatedTradeId as string (could be null, integer, or string)
-      relatedTradeId: json['related_trade_id'] != null 
-          ? json['related_trade_id'].toString() 
-          : null,
+      relatedTradeId: json['related_trade_id']?.toString(),
       createdAt: DateTime.parse(json['created_at']),
     );
   }

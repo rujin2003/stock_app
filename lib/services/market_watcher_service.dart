@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
+import 'dart:developer';
 import '../services/trade_service.dart';
 import '../services/websocket_service.dart';
 import '../models/market_data.dart';
@@ -22,7 +22,7 @@ class MarketWatcherService {
     if (_isRunning) return;
 
     _isRunning = true;
-    print('Starting market watcher service');
+    log('Starting market watcher service');
 
     // Set up a periodic check every 5 seconds
     _timer = Timer.periodic(const Duration(seconds: 5), (_) {
@@ -41,7 +41,7 @@ class MarketWatcherService {
     }
     _subscriptions.clear();
 
-    print('Stopped market watcher service');
+    log('Stopped market watcher service');
   }
 
   void watchSymbol(String symbol) {
@@ -50,7 +50,7 @@ class MarketWatcherService {
       return;
     }
 
-    print('Starting to watch symbol: $symbol');
+    log('Starting to watch symbol: $symbol');
 
     // Determine market type for this symbol
     final marketType = _webSocketService.getMarketTypeForSymbol(symbol);
@@ -68,7 +68,7 @@ class MarketWatcherService {
 
       _subscriptions[symbol] = subscription;
     } else {
-      print('Failed to get stream for symbol: $symbol');
+      log('Failed to get stream for symbol: $symbol');
     }
   }
 
@@ -84,7 +84,7 @@ class MarketWatcherService {
       // Unsubscribe from the symbol
       _webSocketService.unsubscribeFromSymbol(symbol, marketType);
 
-      print('Stopped watching symbol: $symbol');
+      log('Stopped watching symbol: $symbol');
     }
   }
 

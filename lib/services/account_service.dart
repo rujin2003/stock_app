@@ -1,11 +1,13 @@
-import 'dart:math';
+import 'dart:developer';
+import 'dart:math' as math;
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/account_balance.dart';
 import '../models/trade.dart';
 
 class AccountService {
   final SupabaseClient _supabase = Supabase.instance.client;
-  final Random _random = Random();
+  final math.Random _random = math.Random();
 
   // Generate a 10-digit numeric ID
   String _generateNumericId() {
@@ -110,7 +112,6 @@ class AccountService {
         .single();
 
     final balance = balanceResponse['balance'].toDouble();
-    final credit = balanceResponse['credit'].toDouble();
 
     // Get open trades
     final tradesResponse = await _supabase
@@ -157,8 +158,7 @@ class AccountService {
         trade.profit! >= 0 ? TransactionType.profit : TransactionType.loss;
 
     try {
-      print(
-          'Processing ${transactionType.toString().split('.').last} transaction for trade ${trade.id}');
+      log('Processing ${transactionType.toString().split('.').last} transaction for trade ${trade.id}');
 
       await createTransaction(
         type: transactionType,
@@ -168,9 +168,9 @@ class AccountService {
         relatedTradeId: trade.id,
       );
 
-      print('Successfully created transaction for trade ${trade.id}');
+      log('Successfully created transaction for trade ${trade.id}');
     } catch (e) {
-      print('Error creating transaction for trade ${trade.id}: $e');
+      log('Error creating transaction for trade ${trade.id}: $e');
 
       // Try direct update of account balance as a fallback
       try {
@@ -201,10 +201,9 @@ class AccountService {
           'updated_at': DateTime.now().toIso8601String(),
         }).eq('user_id', userId);
 
-        print(
-            'Successfully updated account balance directly for trade ${trade.id}');
+        log('Successfully updated account balance directly for trade ${trade.id}');
       } catch (fallbackError) {
-        print('Fallback error updating account balance: $fallbackError');
+        log('Fallback error updating account balance: $fallbackError');
       }
     }
   }
