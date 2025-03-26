@@ -7,7 +7,7 @@ part 'auth_provider.g.dart';
 @riverpod
 class Auth extends _$Auth {
   late final AuthService _authService = AuthService();
-  
+
   @override
   User? build() {
     return _authService.getCurrentUser();

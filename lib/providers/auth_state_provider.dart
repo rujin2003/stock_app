@@ -62,6 +62,20 @@ class AuthStateNotifier extends _$AuthStateNotifier {
     }
   }
 
+  Future<void> signInWithGoogle() async {
+    state = state.copyWith(status: AuthStatus.authenticating);
+
+    try {
+      await _authService.googleSignIn();
+      state = state.copyWith(status: AuthStatus.authenticated);
+    } catch (e) {
+      state = state.copyWith(
+        status: AuthStatus.error,
+        errorMessage: e.toString(),
+      );
+    }
+  }
+
   Future<void> resetPassword(String email) async {
     try {
       await _authService.resetPassword(email: email);

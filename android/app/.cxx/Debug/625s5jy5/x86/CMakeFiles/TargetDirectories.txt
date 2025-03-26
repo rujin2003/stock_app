@@ -1,0 +1,2 @@
+/Users/devkeshwani/Documents/internship-projects/stock_app/android/app/.cxx/Debug/625s5jy5/x86/CMakeFiles/edit_cache.dir
+/Users/devkeshwani/Documents/internship-projects/stock_app/android/app/.cxx/Debug/625s5jy5/x86/CMakeFiles/rebuild_cache.dir

@@ -1,0 +1,2 @@
+/Users/devkeshwani/Documents/internship-projects/stock_app/android/app/.cxx/Debug/625s5jy5/armeabi-v7a/CMakeFiles/edit_cache.dir
+/Users/devkeshwani/Documents/internship-projects/stock_app/android/app/.cxx/Debug/625s5jy5/armeabi-v7a/CMakeFiles/rebuild_cache.dir

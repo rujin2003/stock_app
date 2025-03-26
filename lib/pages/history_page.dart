@@ -217,7 +217,6 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
           ),
         ),
         actions: [
-          // Add time filter dropdown
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8.0),
             child: Center(

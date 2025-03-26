@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:stock_app/pages/account_page.dart';
 import '../pages/watchlist_page.dart';
 import '../pages/charts_page.dart';
 import '../pages/trade_page.dart';
@@ -101,6 +102,15 @@ class _DesktopLayoutState extends ConsumerState<DesktopLayout>
             visualDensity: VisualDensity.compact,
           ),
           const SizedBox(width: 16),
+          IconButton(
+            icon: const Icon(Icons.logout, size: 20),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (context) => const AccountPage()),
+              );
+            },
+            visualDensity: VisualDensity.compact,
+          ),
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(48),

@@ -171,6 +171,34 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
                         : Text("Register"),
                   ),
                 ),
+                Gap(12),
+                Row(
+                  children: [
+                    Expanded(child: Divider()),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8),
+                      child: Text("or sign up with"),
+                    ),
+                    Expanded(child: Divider()),
+                  ],
+                ),
+                Gap(12),
+                SizedBox(
+                  width: MediaQuery.of(context).size.width,
+                  height: 48,
+                  child: OutlinedButton.icon(
+                    onPressed: _isLoading
+                        ? null
+                        : () => ref
+                            .read(authStateNotifierProvider.notifier)
+                            .signInWithGoogle(),
+                    icon: Image.asset(
+                      "assets/icons/google.png",
+                      height: 24,
+                    ),
+                    label: Text("Continue with Google"),
+                  ),
+                ),
               ],
             ),
           ),
