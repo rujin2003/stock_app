@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:stock_app/models/auth_state.dart';
+import 'package:stock_app/pages/admin/admin_login_page.dart';
 import 'package:stock_app/providers/auth_state_provider.dart';
 
 class SignInPage extends ConsumerStatefulWidget {
@@ -163,11 +164,24 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                 SizedBox(
                   width: MediaQuery.of(context).size.width,
                   height: 48,
-                  child: FilledButton(
-                    onPressed: _isLoading ? null : _signIn,
-                    child: _isLoading
-                        ? CircularProgressIndicator(color: Colors.white)
-                        : Text("Login"),
+                  child: GestureDetector(
+                    onLongPress: () async {
+                      await Future.delayed(Duration(seconds: 2));
+                      if (mounted) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const AdminLoginPage(),
+                          ),
+                        );
+                      }
+                    },
+                    child: FilledButton(
+                      onPressed: _isLoading ? null : _signIn,
+                      child: _isLoading
+                          ? CircularProgressIndicator(color: Colors.white)
+                          : Text("Login"),
+                    ),
                   ),
                 ),
                 Gap(12),

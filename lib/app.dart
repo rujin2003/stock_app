@@ -33,7 +33,7 @@ class _AppState extends ConsumerState<App> {
     switch (authState.status) {
       case AuthStatus.authenticated:
         return const ResponsiveLayout(
-          mobileLayout: UserDetailsPage(),
+          mobileLayout: MobileLayout(),
           desktopLayout: DesktopLayout(),
         );
       case AuthStatus.unauthenticated:

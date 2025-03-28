@@ -104,113 +104,131 @@ class _DocumentVerificationPageState
   }
 
   Widget _buildFormContent(BoxConstraints constraints) {
-    return Column(
-      children: [
-        Expanded(
-          child: Container(
-            decoration: constraints.maxWidth > 900
-                ? BoxDecoration(
-                    borderRadius: const BorderRadius.all(
-                      Radius.circular(20),
+    return Center(
+      child: Container(
+        decoration: constraints.maxWidth > 900
+            ? BoxDecoration(
+                borderRadius: const BorderRadius.all(
+                  Radius.circular(20),
+                ),
+                color: Colors.transparent,
+                border: Border.all(
+                  color: Colors.black26,
+                  width: 2,
+                ),
+              )
+            : null,
+        child: SingleChildScrollView(
+          child: Form(
+            autovalidateMode: AutovalidateMode.onUserInteraction,
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Image.asset("assets/icons/auth.png"),
+                  Text(
+                    "Hope you're not a bot",
+                    style: Theme.of(context).textTheme.displayMedium,
+                  ),
+                  Text(
+                    "Please upload a government-issued proof of identity",
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                  Gap(32),
+                  DropdownButtonFormField<DocumentType>(
+                    value: _selectedDocType,
+                    decoration: const InputDecoration(
+                      labelText: "Choose Document Type",
                     ),
-                    color: Colors.transparent,
-                    border: Border.all(
-                      color: Colors.black26,
-                      width: 2,
-                    ),
-                  )
-                : null,
-            child: SingleChildScrollView(
-              child: Form(
-                autovalidateMode: AutovalidateMode.onUserInteraction,
-                child: Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(24.0),
+                    items: DocumentType.values.map((DocumentType type) {
+                      return DropdownMenuItem(
+                        value: type,
+                        child: Text(type.displayName),
+                      );
+                    }).toList(),
+                    onChanged: (DocumentType? newValue) {
+                      setState(() {
+                        _selectedDocType = newValue;
+                      });
+                    },
+                  ),
+                  Gap(32),
+                  Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 100,
+                        vertical: 24,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .primaryContainer
+                            .withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(32),
+                        border: Border.all(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .primary
+                              .withOpacity(0.2),
+                          width: 2,
+                        ),
+                      ),
                       child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          Image.asset("assets/icons/auth.png"),
-                          Text(
-                            "Hope you're not a bot",
-                            style: Theme.of(context).textTheme.displayMedium,
+                          Icon(
+                            Icons.upload_file,
+                            size: 48,
+                            color: Theme.of(context).colorScheme.primary,
                           ),
-                          Text(
-                            "Please upload a government-issued proof of identity",
-                            style: Theme.of(context).textTheme.labelLarge,
-                          ),
-                          Gap(32),
-                          DropdownButtonFormField<DocumentType>(
-                            value: _selectedDocType,
-                            decoration: const InputDecoration(
-                              labelText: "Choose Document Type",
+                          Gap(16),
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 12,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(30),
+                              ),
                             ),
-                            items: DocumentType.values.map((DocumentType type) {
-                              return DropdownMenuItem(
-                                value: type,
-                                child: Text(type.displayName),
-                              );
-                            }).toList(),
-                            onChanged: (DocumentType? newValue) {
-                              setState(() {
-                                _selectedDocType = newValue;
-                              });
-                            },
+                            onPressed: _isLoading ? null : _pickDocument,
+                            icon: Icon(Icons.attach_file),
+                            label: Text(_selectedFile?.name ?? "Choose File"),
                           ),
-                          Gap(32),
-                          Center(
-                            child: Column(
-                              children: [
-                                Icon(
-                                  Icons.upload_file,
-                                  size: 48,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                                Gap(16),
-                                OutlinedButton.icon(
-                                  onPressed: _isLoading ? null : _pickDocument,
-                                  icon: Icon(Icons.attach_file),
-                                  label: Text(
-                                      _selectedFile?.name ?? "Choose File"),
-                                ),
-                                if (_selectedFile != null) ...[
-                                  Gap(8),
-                                  Text(
-                                    "Selected file: ${_selectedFile!.name}",
-                                    style:
-                                        Theme.of(context).textTheme.bodySmall,
-                                  ),
-                                ],
-                              ],
+                          if (_selectedFile != null) ...[
+                            Gap(8),
+                            Text(
+                              "Selected file: ${_selectedFile!.name}",
+                              style: Theme.of(context).textTheme.bodySmall,
                             ),
-                          ),
-                          Gap(32),
-                          SizedBox(
-                            width: double.infinity,
-                            height: 48,
-                            child: FilledButton(
-                              onPressed: (_selectedDocType != null &&
-                                      _selectedFile != null &&
-                                      !_isLoading)
-                                  ? _submitForVerification
-                                  : null,
-                              child: _isLoading
-                                  ? const CircularProgressIndicator(
-                                      color: Colors.white)
-                                  : const Text("Submit for Verification"),
-                            ),
-                          ),
+                          ],
                         ],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  Gap(32),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: FilledButton(
+                      onPressed: (_selectedDocType != null &&
+                              _selectedFile != null &&
+                              !_isLoading)
+                          ? _submitForVerification
+                          : null,
+                      child: _isLoading
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : const Text("Submit for Verification"),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
         ),
-      ],
+      ),
     );
   }
 }
