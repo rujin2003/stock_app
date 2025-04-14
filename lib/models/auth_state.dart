@@ -4,6 +4,7 @@ enum AuthStatus {
   authenticated,
   unauthenticated,
   error,
+  onboarding
 }
 
 class AuthState {
@@ -23,5 +24,5 @@ class AuthState {
       status: status ?? this.status,
       errorMessage: errorMessage ?? this.errorMessage,
     );
-  }
+}
 }

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
+import 'package:go_router/go_router.dart';
 import 'package:stock_app/models/auth_state.dart';
-import 'package:stock_app/pages/admin/admin_login_page.dart';
+import 'package:stock_app/pages/admin/pages/admin_login_page.dart';
 import 'package:stock_app/providers/auth_state_provider.dart';
+
 
 class SignInPage extends ConsumerStatefulWidget {
   const SignInPage({super.key});
@@ -25,11 +27,13 @@ class _SignInPageState extends ConsumerState<SignInPage> {
     super.dispose();
   }
 
-  Future<void> _signIn() async {
+ Future<void> _signIn() async {
     if (_formKey.currentState!.validate()) {
-      await ref
+      final success = await ref
           .read(authStateNotifierProvider.notifier)
           .signIn(_emailController.text, _passwordController.text);
+          
+      // Navigation is now handled by the router's redirect logic
     }
   }
 
@@ -161,7 +165,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                     child: Text("Forgot Password?"),
                   ),
                 ),
-                SizedBox(
+              SizedBox(
                   width: MediaQuery.of(context).size.width,
                   height: 48,
                   child: GestureDetector(
@@ -185,17 +189,6 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                   ),
                 ),
                 Gap(12),
-                Row(
-                  children: [
-                    Expanded(child: Divider()),
-                    Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 8),
-                      child: Text("or sign in with"),
-                    ),
-                    Expanded(child: Divider()),
-                  ],
-                ),
-                Gap(12),
                 SizedBox(
                   width: MediaQuery.of(context).size.width,
                   height: 48,
@@ -212,6 +205,19 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                     label: Text("Continue with Google"),
                   ),
                 ),
+                Gap(20),
+                Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text("Don't have an account?"),
+                        TextButton(
+
+                     
+                          onPressed: () => context.go('/signup'),
+                          child: const Text('Sign Up'),
+                        ),
+                      ],
+                    ),
               ],
             ),
           ),

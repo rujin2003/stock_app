@@ -830,7 +830,7 @@ class _MetaTraderStyleTradeCardState
                 children: [
                   Text('Profit/Loss:'),
                   Text(
-                    (profit >= 0 ? '+' : '') + '\$${profit.toStringAsFixed(2)}',
+                    '${profit >= 0 ? '+' : ''}\$${profit.toStringAsFixed(2)}',
                     style: TextStyle(
                       color: profit >= 0 ? Colors.green : Colors.red,
                       fontWeight: FontWeight.bold,
@@ -1199,9 +1199,9 @@ class MetaTraderStylePendingOrderCard extends ConsumerStatefulWidget {
   final Trade trade;
 
   const MetaTraderStylePendingOrderCard({
-    Key? key,
+    super.key,
     required this.trade,
-  }) : super(key: key);
+  });
 
   @override
   ConsumerState<MetaTraderStylePendingOrderCard> createState() =>

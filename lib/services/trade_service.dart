@@ -11,9 +11,9 @@ class TradeService {
   final math.Random _random = math.Random();
   final AccountService _accountService = AccountService();
 
-  // Generate a 10-digit numeric ID
+  
   String _generateNumericId() {
-    // Start with 10 followed by 9 random digits to ensure 10 digits total
+   
     return '10${_random.nextInt(900000000) + 100000000}';
   }
 
@@ -77,7 +77,11 @@ class TradeService {
         .eq('user_id', userId)
         .order('open_time', ascending: false);
 
+        print("this is my print statement");
+        print(response);
+
     return response.map((json) => Trade.fromJson(json)).toList();
+    
   }
 
   // Get a real-time stream of trades for the current user
@@ -86,7 +90,7 @@ class TradeService {
 
     // Create a StreamController to manage the stream
     final controller = StreamController<List<Trade>>.broadcast();
-
+   
     // Initial data load
     getTrades().then((trades) {
       if (!controller.isClosed) {
@@ -97,6 +101,7 @@ class TradeService {
         controller.addError(error);
       }
     });
+
 
     // Set up Supabase realtime subscription
     final subscription = _supabase

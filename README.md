@@ -1,6 +1,65 @@
-# Stock Trading App
+# Stock App
 
-A Flutter application for tracking real-time stock, forex, indices, and cryptocurrency data.
+A Flutter application for stock trading and portfolio management.
+
+## Navigation System
+
+The app uses GoRouter for navigation, which provides a more declarative and maintainable way to handle routing compared to traditional Navigator-based navigation.
+
+### Key Features of the Navigation System
+
+1. **Centralized Route Definition**: All routes are defined in a single file (`lib/router/router.dart`), making it easy to understand the app's navigation structure.
+
+2. **Authentication-Based Redirects**: The router automatically redirects users based on their authentication status:
+   - Unauthenticated users are redirected to the login page
+   - Authenticated users without a profile are redirected to the onboarding page
+   - Authenticated users with a profile are redirected to the home page
+
+3. **Declarative Navigation**: Navigation is handled using the `context.go()` method, which is more concise and readable than traditional navigation.
+
+4. **Deep Linking Support**: GoRouter supports deep linking out of the box, allowing users to navigate directly to specific pages via URLs.
+
+### Route Structure
+
+- `/`: Authentication page (sign in)
+- `/signup`: Sign up page
+- `/onboarding`: User onboarding/KYC verification
+- `/user-details`: User details page
+- `/home`: Main app home page
+- `/account`: Account settings page
+- `/watchlist`: Watchlist page
+- `/charts`: Charts page
+- `/trade`: Trade page
+- `/history`: History page
+
+### How to Navigate
+
+To navigate to a different page, use the `context.go()` method:
+
+```dart
+// Navigate to a new page
+context.go('/home');
+
+// Navigate with parameters
+context.go('/user/${userId}');
+
+// Navigate back
+context.pop();
+```
+
+## Getting Started
+
+1. Clone the repository
+2. Run `flutter pub get` to install dependencies
+3. Create a `config.env` file with your Supabase credentials
+4. Run the app with `flutter run`
+
+## Dependencies
+
+- Flutter
+- Riverpod for state management
+- GoRouter for navigation
+- Supabase for backend services
 
 ## Features
 

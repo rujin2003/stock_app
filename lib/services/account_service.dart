@@ -20,14 +20,23 @@ class AccountService {
   Future<AccountBalance> getAccountBalance() async {
     final userId = _supabase.auth.currentUser!.id;
 
+      print("is this function being called ");
+      print("print balances");
+
     final response = await _supabase
         .from('account_balances')
         .select()
         .eq('user_id', userId)
         .single();
+      
+    
+      print(response..toString());
+
+
 
     return AccountBalance.fromJson(response);
   }
+
 
   // Get transactions for the current user
   Future<List<Transaction>> getTransactions(

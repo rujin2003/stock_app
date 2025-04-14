@@ -1,46 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:stock_app/models/auth_state.dart';
-import 'package:stock_app/pages/auth_page.dart';
-import 'package:stock_app/pages/document_verification_page.dart';
-import 'package:stock_app/pages/user_details_page.dart';
-import 'package:stock_app/providers/auth_state_provider.dart';
 import 'package:stock_app/theme/app_theme_data.dart';
-import 'package:stock_app/widgets/responsive_layout.dart';
-import 'package:stock_app/layouts/mobile_layout.dart';
-import 'package:stock_app/layouts/desktop_layout.dart';
 
-class App extends ConsumerStatefulWidget {
+class App extends ConsumerWidget {
   const App({super.key});
-
+  
   @override
-  ConsumerState<App> createState() => _AppState();
-}
-
-class _AppState extends ConsumerState<App> {
-  @override
-  Widget build(BuildContext context) {
-    final authState = ref.watch(authStateNotifierProvider);
-
+  Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp(
       title: 'Stock App',
       theme: appThemeData,
-      home: _handleAuthState(authState),
+      home: const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      ),
     );
-  }
-
-  Widget _handleAuthState(AuthState authState) {
-    switch (authState.status) {
-      case AuthStatus.authenticated:
-        return const ResponsiveLayout(
-          mobileLayout: MobileLayout(),
-          desktopLayout: DesktopLayout(),
-        );
-      case AuthStatus.unauthenticated:
-      case AuthStatus.error:
-      case AuthStatus.initial:
-      case AuthStatus.authenticating:
-        return const AuthPage();
-    }
   }
 }

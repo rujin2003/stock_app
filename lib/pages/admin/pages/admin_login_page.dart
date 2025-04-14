@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
-import 'package:stock_app/pages/admin/admin_dashboard_page.dart';
-import 'package:stock_app/providers/admin_state_provider.dart';
+import 'package:stock_app/pages/admin/pages/admin_dashboard_page.dart';
+import 'package:stock_app/pages/admin/admin_service/dashboard_service/admin_state_provider.dart';
 
 class AdminLoginPage extends ConsumerStatefulWidget {
   const AdminLoginPage({super.key});
@@ -24,25 +24,35 @@ class _AdminLoginPageState extends ConsumerState<AdminLoginPage> {
   }
 
   Future<void> _signIn() async {
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (context) => AdminDashboardPage(),
-      ),
-    );
-    // if (_formKey.currentState!.validate()) {
-    //   await ref.read(adminStateNotifierProvider.notifier).signIn(
-    //         _emailController.text,
-    //         _passwordController.text,
-    //       );
-    // }
+    if (_formKey.currentState!.validate()) {
+      try {
+        await ref.read(adminStateNotifierProvider.notifier).signIn(
+              _emailController.text,
+              _passwordController.text,
+            );
+
+        // If authentication successful, navigate to Dashboard
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => const AdminDashboardPage(),
+            ),
+          );
+        }
+      } catch (e) {
+        // Show error message clearly to the user
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Login failed: $e')),
+          );
+        }
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Admin Login'),
-      ),
       body: Center(
         child: Container(
           constraints: const BoxConstraints(maxWidth: 400),

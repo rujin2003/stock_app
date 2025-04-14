@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:stock_app/pages/sign_in_page.dart';
 import 'package:stock_app/pages/sign_up_page.dart';
 
@@ -16,6 +17,13 @@ class AuthPageState extends State<AuthPage> {
     setState(() {
       showSignIn = !showSignIn;
     });
+    
+    // Navigate to the appropriate route
+    if (showSignIn) {
+      context.go('/');
+    } else {
+      context.go('/signup');
+    }
   }
 
   @override
@@ -72,15 +80,7 @@ class AuthPageState extends State<AuthPage> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(showSignIn
-                  ? "Don't have an account? "
-                  : "Already have an account? "),
-              TextButton(
-                onPressed: toggleView,
-                child: Text(
-                  showSignIn ? 'Sign up' : 'Sign in',
-                ),
-              ),
+          
             ],
           ),
         ),

@@ -10,6 +10,8 @@ import '../providers/market_data_provider.dart';
 import '../providers/time_filter_provider.dart';
 import '../widgets/responsive_layout.dart';
 import '../widgets/time_filter_dropdown.dart';
+import '../pages/transactions_page.dart';
+import 'package:go_router/go_router.dart';
 
 // Provider for total P/L of all open positions (copied from trade_page.dart)
 final totalProfitLossProvider = Provider<AsyncValue<double>>((ref) {
@@ -240,16 +242,24 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
           indicatorColor: theme.colorScheme.primary,
         ),
       ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          context.go('/transactions');
+        },
+        child: const Icon(Icons.add),
+      ),
       body: Column(
         children: [
           // Account balance card
           accountBalanceAsync.when(
             data: (accountBalance) =>
+            
                 _buildAccountBalanceCard(context, accountBalance),
             loading: () => const SizedBox(
               height: 100,
               child: Center(child: CircularProgressIndicator()),
             ),
+
             error: (error, _) => SizedBox(
               height: 100,
               child: Center(

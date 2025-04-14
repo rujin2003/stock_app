@@ -1,0 +1,102 @@
+# Stock App Configuration and Flow Documentation
+
+## Application Overview
+This is a stock trading application that allows users to manage their trading accounts, execute trades, and track their portfolio. The app includes both user-facing features and administrative capabilities.
+
+## User Roles
+1. **Regular Users**: Can create accounts, verify their identity, deposit funds, and execute trades
+2. **Administrators**: Can manage users, verify user identities, and monitor trading activity
+
+## Application Flow
+
+### User Registration and Onboarding
+1. User signs up with email and password
+2. User completes KYC (Know Your Customer) verification by providing:
+   - Personal information (name, birth date, gender)
+   - Contact information (email, phone, address, city, country, zip code)
+   - Identity documents (uploaded as PDFs)
+3. Email is stored in the database and used for account verification and communications
+4. Admin reviews and verifies user documents
+5. Once verified, user can deposit funds and start trading
+
+### Trading Flow
+1. User deposits funds into their account
+2. User selects a trading instrument (stock, forex, etc.)
+3. User sets trade parameters (entry price, volume, leverage, stop loss, take profit)
+4. User executes trade (market or limit order)
+5. System tracks open positions and calculates profit/loss
+6. User can close positions or modify trade parameters
+7. System updates account balance based on trade outcomes
+8. The active_trades count in the user profile is automatically updated when trades are opened or closed
+
+### Administrative Functions
+1. **User Management**:
+   - View all users with filtering options (verified/unverified, active trades)
+   - View detailed user information including KYC documents
+   - Verify user identity after document review
+   - Monitor user account balances and trading activity
+
+2. **Trade Monitoring**:
+   - View all trades across the platform
+   - Filter trades by status, user, or time period
+   - View detailed trade information
+
+## Key Components
+
+### User Model
+- Stores user information including personal details, verification status, and account metrics
+- Handles null values for optional fields like account balance and active trades
+- Provides methods for data conversion and display
+- Includes email field for user identification and communication
+
+### Account Management
+- Tracks user balances, equity, margin, and free margin
+- Processes deposits, withdrawals, and profit/loss from trades
+- Updates account metrics based on open positions
+- Automatically synchronizes account_balance in appusers table with account_balances table via database triggers
+
+### Trade Management
+- Creates and tracks trades with parameters like entry price, volume, and leverage
+- Calculates profit/loss based on current market prices
+- Handles trade closure and partial closures
+- Updates account balances after trade completion
+- Automatically updates active_trades count in appusers table when trades are opened or closed
+
+### Document Management
+- Stores and retrieves user verification documents
+- Provides document viewing capabilities
+- Supports multiple document types per user
+
+## Technical Implementation
+- Built with Flutter for cross-platform compatibility
+- Uses Riverpod for state management
+- Implements responsive design for various screen sizes
+- Integrates with Supabase for backend services
+- Handles PDF document viewing and processing
+- Uses database triggers to maintain data consistency between tables
+
+## Database Triggers
+1. **Account Balance Synchronization**:
+   - Trigger: `update_appusers_balance_trigger`
+   - Table: `account_balances`
+   - Event: AFTER UPDATE
+   - Action: Updates `account_balance` in `appusers` table to match the balance in `account_balances` table
+
+2. **Active Trades Count**:
+   - Triggers: `update_appusers_active_trades_insert_trigger`, `update_appusers_active_trades_update_trigger`, `update_appusers_active_trades_delete_trigger`
+   - Table: `trades`
+   - Events: AFTER INSERT, AFTER UPDATE, AFTER DELETE
+   - Action: Recalculates and updates `active_trades` count in `appusers` table based on open trades
+
+## Security Considerations
+- User verification process to prevent fraud
+- Secure document storage and access
+- Role-based access control for administrative functions
+- Proper handling of sensitive financial data
+
+## Future Enhancements
+- Advanced charting capabilities
+- Additional payment methods
+- Social trading features
+- Mobile notifications for trade events
+- Enhanced reporting and analytics 

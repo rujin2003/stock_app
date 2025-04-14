@@ -13,33 +13,54 @@ class AdminService {
         email: email,
         password: password,
       );
+      
 
-      if (response.user != null) {
-        final isAdminUser = await isAdmin(response.user!.id);
-        if (!isAdminUser) {
-          throw 'User is not an admin';
-        }
-        developer.log('Admin signed in successfully', name: 'AdminService');
+      final user = response.user;
+      if (user == null) throw 'Authentication failed';
+
+      final isAdminUser = await isAdmin(user.id);
+      print(user.id);
+      if (!isAdminUser) {
+        throw 'User is not an admin';
       }
+
+      developer.log('Admin signed in successfully', name: 'AdminService');
     } catch (e) {
       developer.log('Error signing in admin: $e', name: 'AdminService');
       rethrow;
     }
   }
 
-  Future<bool> isAdmin(String userId) async {
-    try {
-      final response = await _client
-          .from('admins')
-          .select('is_super_admin')
-          .eq('uuid', userId)
-          .single();
-      return response != null && response['is_super_admin'] == true;
-    } catch (e) {
-      developer.log('Error checking admin status: $e', name: 'AdminService');
+Future<bool> isAdmin(String userId) async {
+  try {
+    final response = await _client
+        .from('admins')
+        .select('is_super_admin')
+        .eq('uuid', userId)
+        .maybeSingle();
+
+    developer.log('isAdmin response: $response', name: 'AdminService');
+
+    if (response == null) {
+      developer.log('Admin not found for UUID: $userId', name: 'AdminService');
       return false;
     }
+
+    final isAdminValue = response['is_super_admin'];
+    if (isAdminValue is bool) {
+      return isAdminValue;
+    } else {
+      developer.log('Unexpected value for is_super_admin: $isAdminValue',
+          name: 'AdminService');
+      return false;
+    }
+  } catch (e) {
+    developer.log('Error checking admin status: $e', name: 'AdminService');
+    return false;
   }
+}
+
+
 
   Future<void> signOut() async {
     await _client.auth.signOut();
@@ -48,7 +69,7 @@ class AdminService {
   Future<Map<String, dynamic>?> getAdminProfile(String userId) async {
     try {
       final response =
-          await _client.from('admins').select().eq('user_id', userId).single();
+          await _client.from('admin').select().eq('uuid', userId).single();
       return response;
     } catch (e) {
       developer.log('Error fetching admin profile: $e', name: 'AdminService');
@@ -56,4 +77,3 @@ class AdminService {
     }
   }
 }
-

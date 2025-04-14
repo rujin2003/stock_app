@@ -2,13 +2,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/market_watcher_service.dart';
 import '../services/trade_service.dart';
 import '../services/websocket_service.dart';
+import 'market_data_provider.dart';
 
 // Provider for the MarketWatcherService
 final marketWatcherServiceProvider = Provider<MarketWatcherService>((ref) {
   final tradeService = TradeService();
   final webSocketService = WebSocketService();
-
-  // Initialize the WebSocketService
   webSocketService.initialize();
 
   // Create and return the MarketWatcherService
@@ -23,6 +22,7 @@ final marketWatcherServiceProvider = Provider<MarketWatcherService>((ref) {
   // Dispose the service when the provider is disposed
   ref.onDispose(() {
     marketWatcherService.stopWatching();
+    webSocketService.dispose();
   });
 
   return marketWatcherService;

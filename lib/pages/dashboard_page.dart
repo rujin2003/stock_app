@@ -16,7 +16,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   @override
   void initState() {
     super.initState();
-    // Use Future.microtask to schedule the provider update after the build is complete
+   
     Future.microtask(() {
       _prefetchSymbols();
       _initializeWebSockets();
@@ -24,12 +24,12 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   }
 
   void _prefetchSymbols() {
-    // Pre-fetch stock symbols (default)
+   
     ref.read(allSymbolsProvider.notifier).fetchSymbols('stock', 'us');
   }
 
   void _initializeWebSockets() {
-    // Initialize WebSocket service
+   
     ref.read(webSocketServiceProvider);
   }
 

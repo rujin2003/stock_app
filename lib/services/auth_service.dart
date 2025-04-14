@@ -10,12 +10,12 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 class AuthService {
   final SupabaseClient _client = Supabase.instance.client;
 
-  Future<void> signUp({required String email, required String password}) async {
+Future<void> signUp({required String email, required String password}) async {
     await _client.auth.signUp(
       email: email,
       password: password,
     );
-  }
+}
 
   Future<void> signIn({required String email, required String password}) async {
     final response = await _client.auth.signInWithPassword(
@@ -39,6 +39,7 @@ class AuthService {
   Future<void> resetPassword({required String email}) async {
     await _client.auth.resetPasswordForEmail(email);
   }
+  
 
   User? getCurrentUser() {
     final user = _client.auth.currentUser;

@@ -22,6 +22,7 @@ class Symbol {
       isInWatchlist: json['isInWatchlist'] ?? false,
     );
   }
+  
 
   Map<String, dynamic> toJson() {
     return {

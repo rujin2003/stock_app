@@ -22,15 +22,45 @@ class MarketData {
   });
 
   factory MarketData.fromJson(Map<String, dynamic> json) {
+    // Handle different market data formats
+    final type = json['type']?.toString().toLowerCase() ?? '';
+    
+    // Common fields across all market types
+    final symbol = json['s'] ?? json['symbol'] ?? '';
+    final lastPrice = (json['ld'] ?? json['last'] ?? json['price'] ?? 0.0).toDouble();
+    final volume = (json['v'] ?? json['volume'] ?? 0.0).toDouble();
+    final timestamp = json['t'] ?? json['timestamp'] ?? DateTime.now().millisecondsSinceEpoch;
+
+    // Market type specific fields
+    double? open, high, low, close;
+    
+    if (type == 'crypto') {
+      open = json['o'] != null ? (json['o']).toDouble() : null;
+      high = json['h'] != null ? (json['h']).toDouble() : null;
+      low = json['l'] != null ? (json['l']).toDouble() : null;
+      close = json['c'] != null ? (json['c']).toDouble() : null;
+    } else if (type == 'stock' || type == 'indices') {
+      open = json['open'] != null ? (json['open']).toDouble() : null;
+      high = json['high'] != null ? (json['high']).toDouble() : null;
+      low = json['low'] != null ? (json['low']).toDouble() : null;
+      close = json['close'] != null ? (json['close']).toDouble() : null;
+    } else if (type == 'forex') {
+      open = json['bid'] != null ? (json['bid']).toDouble() : null;
+      high = json['ask'] != null ? (json['ask']).toDouble() : null;
+      low = json['spread'] != null ? (json['spread']).toDouble() : null;
+      close = lastPrice;
+    }
+
     return MarketData(
-      symbol: json['s'] ?? '',
-      lastPrice: (json['ld'] ?? 0.0).toDouble(),
-      open: json['o'] != null ? (json['o']).toDouble() : null,
-      high: json['h'] != null ? (json['h']).toDouble() : null,
-      low: json['l'] != null ? (json['l']).toDouble() : null,
-      volume: (json['v'] ?? 0.0).toDouble(),
-      timestamp: json['t'] ?? 0,
-      type: json['type'] ?? '',
+      symbol: symbol,
+      lastPrice: lastPrice,
+      open: open,
+      high: high,
+      low: low,
+      close: close,
+      volume: volume,
+      timestamp: timestamp,
+      type: type,
     );
   }
 

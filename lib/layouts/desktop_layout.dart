@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:stock_app/pages/account_page.dart';
+import 'package:go_router/go_router.dart';
 import '../pages/watchlist_page.dart';
 import '../pages/charts_page.dart';
 import '../pages/trade_page.dart';
@@ -39,6 +39,22 @@ class _DesktopLayoutState extends ConsumerState<DesktopLayout>
       if (!_tabController.indexIsChanging) {
         ref.read(desktopSelectedTabProvider.notifier).state =
             _tabController.index;
+        
+        // Navigate to the corresponding route
+        switch (_tabController.index) {
+          case 0:
+            context.go('/watchlist');
+            break;
+          case 1:
+            context.go('/charts');
+            break;
+          case 2:
+            context.go('/trade');
+            break;
+          case 3:
+            context.go('/history');
+            break;
+        }
       }
     });
 
@@ -103,12 +119,8 @@ class _DesktopLayoutState extends ConsumerState<DesktopLayout>
           ),
           const SizedBox(width: 16),
           IconButton(
-            icon: const Icon(Icons.logout, size: 20),
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (context) => const AccountPage()),
-              );
-            },
+            icon: const Icon(Icons.person, size: 20),
+            onPressed: () => context.go('/account'),
             visualDensity: VisualDensity.compact,
           ),
         ],
@@ -149,7 +161,15 @@ class _DesktopLayoutState extends ConsumerState<DesktopLayout>
         toolbarHeight: 56,
         elevation: 0,
       ),
-      body: selectedTab == 0 ? _buildWatchlistWithChart() : _pages[selectedTab],
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildWatchlistWithChart(),
+          _pages[1],
+          _pages[2],
+          _pages[3],
+        ],
+      ),
     );
   }
 

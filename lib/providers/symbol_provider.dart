@@ -34,10 +34,15 @@ final filteredSymbolsProvider =
 });
 
 final watchlistProvider = FutureProvider<List<Symbol>>((ref) async {
-  final supabaseService = SupabaseService();
-  return await supabaseService.getWatchlist();
+  try {
+    final supabaseService = SupabaseService();
+    final result = await supabaseService.getWatchlist();
+    return result;
+  } catch (e, stack) {
+   print('Watchlist error: $e\n$stack');
+    rethrow;
+  }
 });
-
 class SymbolFilter {
   final String type;
   final String region;
@@ -73,8 +78,9 @@ class AllSymbolsNotifier extends StateNotifier<AsyncValue<List<Symbol>>> {
           headers: {'token': dotenv.env['ITICK_API_KEY']!},
         ),
       );
+     
 
-      if (response.data['code'] == 200) {
+      if (response.statusCode == 200) {
         final symbols = (response.data['data'] as List)
             .map((item) => Symbol.fromJson(item))
             .toList();

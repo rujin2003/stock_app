@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
+import 'package:go_router/go_router.dart';
 import 'package:stock_app/models/auth_state.dart';
 import 'package:stock_app/providers/auth_state_provider.dart';
+
 
 class SignUpPage extends ConsumerStatefulWidget {
   const SignUpPage({super.key});
@@ -28,9 +30,15 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
 
   Future<void> _signUp() async {
     if (_formKey.currentState!.validate()) {
+      setState(() => _isLoading = true); // Show loading state
+
       await ref
           .read(authStateNotifierProvider.notifier)
           .signUp(_emailController.text, _passwordController.text);
+
+      setState(() => _isLoading = false); // Hide loading state
+      
+      // Navigation is now handled by the router's redirect logic
     }
   }
 
@@ -52,10 +60,9 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
       });
     }
 
-    // Show success message and navigate back if registration was successful
+    // Navigate back to login if registration is successful
     if (authState.status == AuthStatus.unauthenticated &&
-        authState.errorMessage != null &&
-        authState.errorMessage!.contains("Registration successful")) {
+        (authState.errorMessage?.contains("Registration successful") ?? false)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -64,10 +71,10 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
           ),
         );
 
-        // Navigate back to auth page
-        Navigator.of(context).pop();
+        // Navigate to sign in page
+        context.go('/');
 
-        // Clear the message so it doesn't show again
+        // Clear message so it doesn't trigger again
         ref.read(authStateNotifierProvider.notifier).clearError();
       });
     }
@@ -75,34 +82,32 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
     // Set loading state
     _isLoading = authState.status == AuthStatus.authenticating;
 
-    return Form(
-      key: _formKey,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Padding(
-            padding: EdgeInsets.all(24),
+    return Scaffold(
+      appBar: AppBar(title: Text("Sign Up")),
+      body: Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Form(
+            key: _formKey,
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Image.asset("assets/icons/auth.png"),
+                Image.asset("assets/icons/auth.png", height: 100),
                 Text(
                   "Register with email",
-                  style: Theme.of(context).textTheme.displayMedium,
+                  style: Theme.of(context).textTheme.headlineSmall,
                 ),
                 Text(
-                  "Join the community to trade, buy, sell and explore!",
+                  "Join the community to trade, buy, sell, and explore!",
                   style: Theme.of(context).textTheme.labelLarge,
+                  textAlign: TextAlign.center,
                 ),
                 Gap(24),
                 TextFormField(
                   controller: _emailController,
                   decoration: InputDecoration(
-                    prefixIcon: Icon(
-                      Icons.email,
-                    ),
+                    prefixIcon: Icon(Icons.email),
                     labelText: "Email",
                   ),
                   validator: (value) {
@@ -123,9 +128,7 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
                   controller: _passwordController,
                   obscureText: true,
                   decoration: InputDecoration(
-                    prefixIcon: Icon(
-                      Icons.lock,
-                    ),
+                    prefixIcon: Icon(Icons.lock),
                     labelText: "Password",
                   ),
                   validator: (value) {
@@ -144,9 +147,7 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
                   controller: _confirmPasswordController,
                   obscureText: true,
                   decoration: InputDecoration(
-                    prefixIcon: Icon(
-                      Icons.lock,
-                    ),
+                    prefixIcon: Icon(Icons.lock),
                     labelText: "Confirm Password",
                   ),
                   validator: (value) {
@@ -162,7 +163,7 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
                 ),
                 SizedBox(height: 16),
                 SizedBox(
-                  width: MediaQuery.of(context).size.width,
+                  width: double.infinity,
                   height: 48,
                   child: FilledButton(
                     onPressed: _isLoading ? null : _signUp,
@@ -184,7 +185,7 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
                 ),
                 Gap(12),
                 SizedBox(
-                  width: MediaQuery.of(context).size.width,
+                  width: double.infinity,
                   height: 48,
                   child: OutlinedButton.icon(
                     onPressed: _isLoading
@@ -199,10 +200,24 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
                     label: Text("Continue with Google"),
                   ),
                 ),
+                Gap(12),
+                  Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text("Already have an account?"),
+                        TextButton(
+
+                     
+                          onPressed: () => context.go('/signin'),
+                          child: const Text('Sign in'),
+                        ),
+                      ],
+                    ),
+                
               ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }

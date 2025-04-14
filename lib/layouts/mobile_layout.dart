@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:stock_app/pages/account_page.dart';
+import 'package:go_router/go_router.dart';
 import '../pages/watchlist_page.dart';
 import '../pages/charts_page.dart';
 import '../pages/trade_page.dart';
@@ -8,6 +8,7 @@ import '../pages/history_page.dart';
 import '../widgets/symbol_search.dart';
 import '../providers/symbol_provider.dart';
 import '../providers/market_data_provider.dart';
+import '../services/websocket_service.dart';
 
 final selectedTabProvider = StateProvider<int>((ref) => 0);
 
@@ -32,7 +33,13 @@ class _MobileLayoutState extends ConsumerState<MobileLayout> {
     // Use Future.microtask to schedule the provider update after the build is complete
     Future.microtask(() {
       _prefetchSymbols();
-      _initializeWebSockets();
+      // Only initialize WebSocket if we have symbols to watch
+      final watchlistAsync = ref.read(watchlistProvider);
+      watchlistAsync.whenData((watchlist) {
+        if (watchlist.isNotEmpty) {
+          _initializeWebSockets();
+        }
+      });
     });
   }
 
@@ -43,7 +50,25 @@ class _MobileLayoutState extends ConsumerState<MobileLayout> {
 
   void _initializeWebSockets() {
     // Initialize WebSocket service
-    ref.read(webSocketServiceProvider);
+    final webSocketService = ref.read(webSocketServiceProvider);
+    
+    // Get the watchlist
+    final watchlistAsync = ref.read(watchlistProvider);
+    watchlistAsync.whenData((watchlist) {
+      // Connect to relevant markets based on watchlist symbols
+      final marketTypes = <MarketType>{};
+      for (final symbol in watchlist) {
+        final marketType = webSocketService.getMarketTypeForSymbol(symbol.code);
+        marketTypes.add(marketType);
+        debugPrint('Symbol ${symbol.code} is of type $marketType');
+      }
+      
+      // Connect to each market type
+      for (final marketType in marketTypes) {
+        debugPrint('Connecting to market type: $marketType');
+        webSocketService.connectToMarket(marketType);
+      }
+    });
   }
 
   @override
@@ -73,17 +98,8 @@ class _MobileLayoutState extends ConsumerState<MobileLayout> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.search, size: 20),
-            onPressed: () => _openSymbolSearch(context),
-            visualDensity: VisualDensity.compact,
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout, size: 20),
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (context) => const AccountPage()),
-              );
-            },
+            icon: const Icon(Icons.person, size: 20),
+            onPressed: () => context.go('/account'),
           ),
         ],
         toolbarHeight: 48,

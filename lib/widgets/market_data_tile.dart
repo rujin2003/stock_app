@@ -141,7 +141,7 @@ class MarketDataTile extends ConsumerWidget {
 
     // If on mobile, navigate to the charts tab
     if (ResponsiveLayout.isMobile(context)) {
-      ref.read(selectedTabProvider.notifier).state = 1; // Charts tab index
+      ref.read(selectedTabProvider.notifier).state = 1;
     }
   }
 
