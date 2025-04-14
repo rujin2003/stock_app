@@ -78,13 +78,9 @@ class MarketWatcherService {
       subscription.cancel();
       _subscriptions.remove(symbol);
 
-      // Determine market type for this symbol
-      final marketType = _webSocketService.getMarketTypeForSymbol(symbol);
+     
 
-      // Unsubscribe from the symbol
-      _webSocketService.unsubscribeFromSymbol(symbol, marketType);
-
-      log('Stopped watching symbol: $symbol');
+    
     }
   }
 

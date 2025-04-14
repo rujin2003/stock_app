@@ -9,12 +9,11 @@ import 'package:stock_app/theme/app_theme_data.dart';
 Future<void> main() async { 
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Load environment variables
   await dotenv.load(
     fileName: "config.env",
   );
+  
 
-  // Initialize Supabase
   await Supabase.initialize(
     url: dotenv.env['SUPABASE_URL']!,
     anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
@@ -28,15 +27,9 @@ Future<void> main() async {
   webSocketService.initialize();
 
   // Add a delay before starting the app to ensure proper initialization
-  await Future.delayed(const Duration(seconds: 5));
+  await Future.delayed(const Duration(seconds: 2));
+  
 
-  // Initialize WebSocket connections
-  await Future.wait([
-    webSocketService.connectToMarket(MarketType.stock),
-    webSocketService.connectToMarket(MarketType.forex),
-    webSocketService.connectToMarket(MarketType.crypto),
-    webSocketService.connectToMarket(MarketType.indices),
-  ]);
 
   runApp(
     ProviderScope(

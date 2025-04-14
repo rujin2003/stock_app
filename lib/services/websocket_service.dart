@@ -35,13 +35,13 @@ class WebSocketService {
   final Map<MarketType, ConnectionState> _connectionStates = {};
   final Map<String, StreamController<MarketData>> _symbolStreamControllers = {};
   final Map<String, Completer<void>> _pendingSubscriptions = {};
-  final Map<String, DateTime> _lastUpdateTimes = {};
-  final Duration _updateThrottle = const Duration(milliseconds: 100);
-
-  // Queue of symbols waiting for authentication to complete
   final Map<MarketType, List<String>> _pendingSymbols = {};
+  final Map<MarketType, Timer?> _reconnectTimers = {};
+  final Map<MarketType, int> _reconnectAttempts = {};
 
   String? _authToken;
+  static const int _maxReconnectAttempts = 5;
+  static const Duration _initialReconnectDelay = Duration(seconds: 5);
 
   void initialize() {
     _authToken = dotenv.env['ITICK_API_KEY'];
@@ -49,27 +49,26 @@ class WebSocketService {
       debugPrint('Error: ITICK_API_KEY not found in environment variables');
     }
 
-    // Initialize connection states
     for (var type in MarketType.values) {
       _connectionStates[type] = ConnectionState.disconnected;
       _pendingSymbols[type] = [];
+      _reconnectAttempts[type] = 0;
     }
   }
 
   Future<void> connectToMarket(MarketType marketType) async {
     if (_channels[marketType] != null &&
         _connectionStates[marketType] != ConnectionState.disconnected) {
-      // Already connected or connecting
       return;
     }
 
-    // Update connection state
     _connectionStates[marketType] = ConnectionState.connecting;
+    _reconnectAttempts[marketType] = (_reconnectAttempts[marketType] ?? 0) + 1;
 
     final wsUrl = _wsUrls[marketType];
     if (wsUrl == null) {
       debugPrint('Error: Invalid market type');
-      _connectionStates[marketType] = ConnectionState.disconnected;
+      _handleConnectionFailure(marketType);
       return;
     }
 
@@ -77,42 +76,58 @@ class WebSocketService {
       final channel = WebSocketChannel.connect(Uri.parse(wsUrl));
       _channels[marketType] = channel;
 
-      // Listen for messages
       channel.stream.listen(
         (message) {
           _handleMessage(message, marketType);
         },
         onError: (error) {
-          debugPrint('WebSocket error: $error');
-          _connectionStates[marketType] = ConnectionState.disconnected;
-          _reconnect(marketType);
+          debugPrint('WebSocket error for ${marketType.toString()}: $error');
+          _handleConnectionFailure(marketType);
         },
         onDone: () {
-          debugPrint('WebSocket connection closed');
-          _connectionStates[marketType] = ConnectionState.disconnected;
-          _reconnect(marketType);
+          debugPrint('WebSocket connection closed for ${marketType.toString()}');
+          _handleConnectionFailure(marketType);
         },
       );
 
-      // Authenticate
       _authenticate(marketType);
     } catch (e) {
-      debugPrint('Error connecting to WebSocket: $e');
-      _connectionStates[marketType] = ConnectionState.disconnected;
-      _reconnect(marketType);
+      debugPrint('Error connecting to WebSocket for ${marketType.toString()}: $e');
+      _handleConnectionFailure(marketType);
+    }
+  }
+
+  void _handleConnectionFailure(MarketType marketType) {
+    _connectionStates[marketType] = ConnectionState.disconnected;
+    _channels[marketType]?.sink.close();
+    _channels[marketType] = null;
+
+    if (_reconnectAttempts[marketType]! <= _maxReconnectAttempts) {
+      final delay = Duration(
+        seconds: _initialReconnectDelay.inSeconds * 
+                (1 << (_reconnectAttempts[marketType]! - 1)),
+      );
+      
+      _reconnectTimers[marketType]?.cancel();
+      _reconnectTimers[marketType] = Timer(delay, () {
+        connectToMarket(marketType);
+      });
+    } else {
+      debugPrint('Max reconnection attempts reached for ${marketType.toString()}');
+      _reconnectAttempts[marketType] = 0;
     }
   }
 
   void _authenticate(MarketType marketType) {
     if (_authToken == null) {
       debugPrint('Cannot authenticate: Token is null');
+      _handleConnectionFailure(marketType);
       return;
     }
 
     final channel = _channels[marketType];
     if (channel == null) return;
 
-    // Update connection state
     _connectionStates[marketType] = ConnectionState.authenticating;
 
     final authMessage = {
@@ -124,30 +139,22 @@ class WebSocketService {
   }
 
   Future<void> subscribeToSymbol(String symbol, MarketType marketType) async {
-    // Create a stream controller for this symbol if it doesn't exist
     if (!_symbolStreamControllers.containsKey(symbol)) {
-      _symbolStreamControllers[symbol] =
-          StreamController<MarketData>.broadcast();
+      _symbolStreamControllers[symbol] = StreamController<MarketData>.broadcast();
     }
 
-    // Check connection state
-    final connectionState =
-        _connectionStates[marketType] ?? ConnectionState.disconnected;
+    final connectionState = _connectionStates[marketType] ?? ConnectionState.disconnected;
 
     if (connectionState == ConnectionState.disconnected) {
-      // Connect first
       await connectToMarket(marketType);
-      // Add to pending symbols
       _pendingSymbols[marketType]?.add(symbol);
       return;
     } else if (connectionState == ConnectionState.connecting ||
         connectionState == ConnectionState.authenticating) {
-      // Add to pending symbols
       _pendingSymbols[marketType]?.add(symbol);
       return;
     }
 
-    // If we're authenticated, subscribe immediately
     _subscribeToSymbol(symbol, marketType);
   }
 
@@ -163,35 +170,21 @@ class WebSocketService {
 
     channel.sink.add(jsonEncode(subscribeMessage));
 
-    // Create a completer for this subscription if it doesn't exist
     if (!_pendingSubscriptions.containsKey(symbol)) {
       _pendingSubscriptions[symbol] = Completer<void>();
     }
   }
 
-  void unsubscribeFromSymbol(String symbol, MarketType marketType) {
-    final channel = _channels[marketType];
-    if (channel == null) return;
-
-    final unsubscribeMessage = {
-      'ac': 'unsubscribe',
-      'params': symbol,
-      'types': 'quote',
-    };
-
-    channel.sink.add(jsonEncode(unsubscribeMessage));
-  }
-
   void _handleMessage(dynamic message, MarketType marketType) {
     try {
       final Map<String, dynamic> data = jsonDecode(message);
-      // Handle authentication response
+      
       if (data['resAc'] == 'auth') {
         if (data['code'] == 1) {
           debugPrint('Authentication successful for ${marketType.toString()}');
           _connectionStates[marketType] = ConnectionState.authenticated;
+          _reconnectAttempts[marketType] = 0;
 
-          // Process any pending symbols
           final pendingSymbols = _pendingSymbols[marketType] ?? [];
           for (final symbol in pendingSymbols) {
             _subscribeToSymbol(symbol, marketType);
@@ -199,48 +192,35 @@ class WebSocketService {
           _pendingSymbols[marketType]?.clear();
         } else {
           debugPrint('Authentication failed: ${data['msg']}');
-          _connectionStates[marketType] = ConnectionState.disconnected;
+          _handleConnectionFailure(marketType);
         }
         return;
       }
 
-      // Handle subscription response
       if (data['resAc'] == 'subscribe') {
         final symbol = data['params'] as String?;
         if (data['code'] == 1) {
           debugPrint('Subscription successful: ${data['msg']}');
-
-          // Complete the subscription completer
           if (symbol != null && _pendingSubscriptions.containsKey(symbol)) {
             _pendingSubscriptions[symbol]?.complete();
             _pendingSubscriptions.remove(symbol);
           }
         } else {
           debugPrint('Subscription failed: ${data['msg']}');
-
-          // Complete the subscription completer with an error
           if (symbol != null && _pendingSubscriptions.containsKey(symbol)) {
-            _pendingSubscriptions[symbol]
-                ?.completeError('Subscription failed: ${data['msg']}');
+            _pendingSubscriptions[symbol]?.completeError('Subscription failed: ${data['msg']}');
             _pendingSubscriptions.remove(symbol);
           }
         }
         return;
       }
 
-      // Handle market data with rate limiting
       if (data['code'] == 1 && data.containsKey('data')) {
         final marketData = MarketData.fromJson(data['data']);
         final symbol = marketData.symbol;
-        final now = DateTime.now();
 
-        // Check if enough time has passed since the last update
-        if (!_lastUpdateTimes.containsKey(symbol) ||
-            now.difference(_lastUpdateTimes[symbol]!) > _updateThrottle) {
-          if (_symbolStreamControllers.containsKey(symbol)) {
-            _symbolStreamControllers[symbol]!.add(marketData);
-            _lastUpdateTimes[symbol] = now;
-          }
+        if (_symbolStreamControllers.containsKey(symbol)) {
+          _symbolStreamControllers[symbol]!.add(marketData);
         }
       }
     } catch (e) {
@@ -248,29 +228,12 @@ class WebSocketService {
     }
   }
 
-  Stream<MarketData>? getSymbolStream(String symbol) {
-    if (!_symbolStreamControllers.containsKey(symbol)) {
-      // Create a stream controller if it doesn't exist
-      _symbolStreamControllers[symbol] =
-          StreamController<MarketData>.broadcast();
-    }
-    return _symbolStreamControllers[symbol]?.stream;
-  }
-
-  void _reconnect(MarketType marketType) {
-    // Close existing connection
-    _channels[marketType]?.sink.close();
-    _channels[marketType] = null;
-
-    // Attempt to reconnect after a longer delay
-    Future.delayed(const Duration(seconds: 10), () {
-      connectToMarket(marketType);
-    });
-  }
-
   void dispose() {
-    for (final channel in _channels.values) {
-      channel?.sink.close();
+    for (final type in MarketType.values) {
+      _reconnectTimers[type]?.cancel();
+      _reconnectTimers[type] = null;
+      _channels[type]?.sink.close();
+      _channels[type] = null;
     }
     _channels.clear();
 
@@ -285,6 +248,30 @@ class WebSocketService {
       }
     }
     _pendingSubscriptions.clear();
+  }
+
+  Stream<MarketData>? getSymbolStream(String symbol) {
+    if (!_symbolStreamControllers.containsKey(symbol)) {
+      _symbolStreamControllers[symbol] = StreamController<MarketData>.broadcast();
+    }
+    return _symbolStreamControllers[symbol]?.stream;
+  }
+
+  void unsubscribeFromSymbol(String symbol, MarketType marketType) {
+    final channel = _channels[marketType];
+    if (channel == null) return;
+
+    final unsubscribeMessage = {
+      'ac': 'unsubscribe',
+      'params': symbol,
+      'types': 'quote',
+    };
+
+    channel.sink.add(jsonEncode(unsubscribeMessage));
+    
+    // Clean up the stream controller
+    _symbolStreamControllers[symbol]?.close();
+    _symbolStreamControllers.remove(symbol);
   }
 
   MarketType getMarketTypeForSymbol(String symbol) {

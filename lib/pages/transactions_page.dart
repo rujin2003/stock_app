@@ -316,15 +316,32 @@ class _TransactionsPageState extends ConsumerState<TransactionsPage>
         accountData['full_name'] = _fullNameController.text;
       }
 
-      await Supabase.instance.client.from('user_accounts').insert(accountData);
+      // Insert the new account
+      final response = await Supabase.instance.client
+          .from('user_accounts')
+          .insert(accountData)
+          .select()
+          .single();
+
+      // Reload the accounts list
       await _loadUserAccounts();
 
-      setState(() {
-        _isAddingNewAccount = false;
-        _selectedUserAccountId = _userAccounts.first['id'].toString();
-      });
+      // Clear form fields
+      _bankNameController.clear();
+      _ifscCodeController.clear();
+      _bankAddressController.clear();
+      _accountNoController.clear();
+      _fullNameController.clear();
+      _upiIdController.clear();
+      _walletAddressController.clear();
 
       if (mounted) {
+        setState(() {
+          _isAddingNewAccount = false;
+          // Set the selected account ID to the newly created account
+          _selectedUserAccountId = 'account_${response['id']}';
+        });
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Account added successfully')),
         );
@@ -336,7 +353,9 @@ class _TransactionsPageState extends ConsumerState<TransactionsPage>
         );
       }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -448,7 +467,12 @@ class _TransactionsPageState extends ConsumerState<TransactionsPage>
                                   .map((account) => DropdownMenuItem<String>(
                                         value: 'account_${account['id']}',
                                         child: Text(
-                                            '${account['full_name'] ?? account['upi_id'] ?? account['wallet_address']}'),
+                                            account['account_type'] == 'upi'
+                                                ? 'UPI: ${account['upi_id']}'
+                                                : account['account_type'] == 'bank_transfer'
+                                                    ? 'A/C: ${account['account_no']}'
+                                                    : 'Wallet: ${account['wallet_address']}'
+                                        ),
                                       ))
                                   .toList(),
                             ],
@@ -646,7 +670,12 @@ class _TransactionsPageState extends ConsumerState<TransactionsPage>
                                   .map((account) => DropdownMenuItem<String>(
                                         value: 'account_${account['id']}',
                                         child: Text(
-                                            '${account['account_holder_name'] ?? account['upi_id'] ?? account['wallet_address']}'),
+                                            account['account_type'] == 'upi'
+                                                ? 'UPI: ${account['upi_id']}'
+                                                : account['account_type'] == 'bank_transfer'
+                                                    ? 'A/C: ${account['account_no']}'
+                                                    : 'Wallet: ${account['wallet_address']}'
+                                        ),
                                       ))
                                   .toList(),
                               onChanged: (value) {
@@ -873,7 +902,12 @@ class _TransactionsPageState extends ConsumerState<TransactionsPage>
                                   .map((account) => DropdownMenuItem<String>(
                                         value: 'account_${account['id']}',
                                         child: Text(
-                                            '${account['full_name'] ?? account['upi_id'] ?? account['wallet_address']}'),
+                                            account['account_type'] == 'upi'
+                                                ? 'UPI: ${account['upi_id']}'
+                                                : account['account_type'] == 'bank_transfer'
+                                                    ? 'A/C: ${account['account_no']}'
+                                                    : 'Wallet: ${account['wallet_address']}'
+                                        ),
                                       ))
                                   .toList(),
                             ],
