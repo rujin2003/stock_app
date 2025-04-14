@@ -1,0 +1,1 @@
+/Users/rujindevkota/Documents/hello/stock_app/build/app/intermediates/cxx/RelWithDebInfo/1t3s5d41/obj/armeabi-v7a

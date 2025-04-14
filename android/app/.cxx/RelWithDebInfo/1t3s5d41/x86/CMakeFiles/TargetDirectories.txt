@@ -1,0 +1,2 @@
+/Users/rujindevkota/Documents/hello/stock_app/android/app/.cxx/RelWithDebInfo/1t3s5d41/x86/CMakeFiles/edit_cache.dir
+/Users/rujindevkota/Documents/hello/stock_app/android/app/.cxx/RelWithDebInfo/1t3s5d41/x86/CMakeFiles/rebuild_cache.dir

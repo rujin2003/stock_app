@@ -27,9 +27,16 @@ Future<void> main() async {
   final webSocketService = WebSocketService();
   webSocketService.initialize();
 
+  // Add a delay before starting the app to ensure proper initialization
+  await Future.delayed(const Duration(seconds: 5));
 
-
-  await Future.delayed(Duration(seconds: 2));
+  // Initialize WebSocket connections
+  await Future.wait([
+    webSocketService.connectToMarket(MarketType.stock),
+    webSocketService.connectToMarket(MarketType.forex),
+    webSocketService.connectToMarket(MarketType.crypto),
+    webSocketService.connectToMarket(MarketType.indices),
+  ]);
 
   runApp(
     ProviderScope(
