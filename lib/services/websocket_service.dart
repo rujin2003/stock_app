@@ -36,7 +36,7 @@ class WebSocketService {
   final Map<String, StreamController<MarketData>> _symbolStreamControllers = {};
   final Map<String, Completer<void>> _pendingSubscriptions = {};
   final Map<String, DateTime> _lastUpdateTimes = {};
-  final Duration _updateThrottle = const Duration(milliseconds: 500);
+  final Duration _updateThrottle = const Duration(milliseconds: 100);
 
   // Queue of symbols waiting for authentication to complete
   final Map<MarketType, List<String>> _pendingSymbols = {};

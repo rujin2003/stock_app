@@ -6,6 +6,7 @@ class MarketData {
   final double? low;
   final double? close;
   final double volume;
+  final double turnover;
   final int timestamp;
   final String type;
 
@@ -17,6 +18,7 @@ class MarketData {
     this.low,
     this.close,
     required this.volume,
+    required this.turnover,
     required this.timestamp,
     required this.type,
   });
@@ -27,29 +29,19 @@ class MarketData {
     
     // Common fields across all market types
     final symbol = json['s'] ?? json['symbol'] ?? '';
-    final lastPrice = (json['ld'] ?? json['last'] ?? json['price'] ?? 0.0).toDouble();
+    final lastPrice = (json['ld'] ?? json['last'] ?? json['c'] ?? 0.0).toDouble();
     final volume = (json['v'] ?? json['volume'] ?? 0.0).toDouble();
+    final turnover = (json['tu'] ?? 0.0).toDouble();
     final timestamp = json['t'] ?? json['timestamp'] ?? DateTime.now().millisecondsSinceEpoch;
 
     // Market type specific fields
     double? open, high, low, close;
     
-    if (type == 'crypto') {
-      open = json['o'] != null ? (json['o']).toDouble() : null;
-      high = json['h'] != null ? (json['h']).toDouble() : null;
-      low = json['l'] != null ? (json['l']).toDouble() : null;
-      close = json['c'] != null ? (json['c']).toDouble() : null;
-    } else if (type == 'stock' || type == 'indices') {
-      open = json['open'] != null ? (json['open']).toDouble() : null;
-      high = json['high'] != null ? (json['high']).toDouble() : null;
-      low = json['low'] != null ? (json['low']).toDouble() : null;
-      close = json['close'] != null ? (json['close']).toDouble() : null;
-    } else if (type == 'forex') {
-      open = json['bid'] != null ? (json['bid']).toDouble() : null;
-      high = json['ask'] != null ? (json['ask']).toDouble() : null;
-      low = json['spread'] != null ? (json['spread']).toDouble() : null;
-      close = lastPrice;
-    }
+    // Parse according to iTick.org WebSocket API format
+    open = json['o'] != null ? (json['o']).toDouble() : null;
+    high = json['h'] != null ? (json['h']).toDouble() : null;
+    low = json['l'] != null ? (json['l']).toDouble() : null;
+    close = json['c'] != null ? (json['c']).toDouble() : null;
 
     return MarketData(
       symbol: symbol,
@@ -59,6 +51,7 @@ class MarketData {
       low: low,
       close: close,
       volume: volume,
+      turnover: turnover,
       timestamp: timestamp,
       type: type,
     );
@@ -66,8 +59,14 @@ class MarketData {
 
   double? get changeAmount => open != null ? lastPrice - open! : null;
 
-  double? get changePercent =>
-      open != null && open! != 0 ? ((lastPrice - open!) / open! * 100) : null;
+  double? get changePercent {
+    if (open != null && open! != 0) {
+      final change = ((lastPrice - open!) / open! * 100);
+      // Return with 2 decimal places precision
+      return double.parse(change.toStringAsFixed(2));
+    }
+    return null;
+  }
 
   MarketData copyWith({
     String? symbol,
@@ -77,6 +76,7 @@ class MarketData {
     double? low,
     double? close,
     double? volume,
+    double? turnover,
     int? timestamp,
     String? type,
   }) {
@@ -88,6 +88,7 @@ class MarketData {
       low: low ?? this.low,
       close: close ?? this.close,
       volume: volume ?? this.volume,
+      turnover: turnover ?? this.turnover,
       timestamp: timestamp ?? this.timestamp,
       type: type ?? this.type,
     );

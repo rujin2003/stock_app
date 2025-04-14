@@ -1,5 +1,4 @@
 import 'dart:developer';
-import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -46,7 +45,6 @@ class MarketDataTile extends ConsumerWidget {
 
     // Listen for price changes - wrap in try-catch to handle potential errors
     try {
-      Timer? _debounceTimer;
       ref.listen<AsyncValue<MarketData>>(
         marketDataProvider(symbol.code),
         (previous, current) {
@@ -54,9 +52,6 @@ class MarketDataTile extends ConsumerWidget {
               previous.hasValue &&
               current.hasValue &&
               previous.value!.lastPrice != current.value!.lastPrice) {
-            // Cancel any existing timer
-            _debounceTimer?.cancel();
-            
             // Update price direction
             ref.read(priceDirectionProvider(symbol.code).notifier).state =
                 current.value!.lastPrice > previous.value!.lastPrice;
@@ -64,11 +59,12 @@ class MarketDataTile extends ConsumerWidget {
             // Set price changed flag
             ref.read(priceChangeProvider(symbol.code).notifier).state = true;
 
-            // Reset price changed flag after animation with debouncing
-            _debounceTimer = Timer(const Duration(milliseconds: 3000), () {
+            // Reset price changed flag after animation
+            Future.delayed(const Duration(milliseconds: 1000), () {
               // Check if the widget is still mounted before using ref
               if (context.mounted) {
-                ref.read(priceChangeProvider(symbol.code).notifier).state = false;
+                ref.read(priceChangeProvider(symbol.code).notifier).state =
+                    false;
               }
             });
           }
@@ -145,7 +141,7 @@ class MarketDataTile extends ConsumerWidget {
 
     // If on mobile, navigate to the charts tab
     if (ResponsiveLayout.isMobile(context)) {
-      ref.read(selectedTabProvider.notifier).state = 1;
+      ref.read(selectedTabProvider.notifier).state = 1; // Charts tab index
     }
   }
 
