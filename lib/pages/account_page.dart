@@ -25,6 +25,9 @@ class AccountPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final isMobile = ResponsiveLayout.isMobile(context);
+
     return Scaffold(
       body: Container(
         width: double.infinity,
@@ -37,92 +40,106 @@ class AccountPage extends ConsumerWidget {
         ),
         child: Center(
           child: Container(
-            width: 800,
-            margin: const EdgeInsets.all(24.0),
+            width: isMobile ? double.infinity : 800,
+            margin: EdgeInsets.all(isMobile ? 16.0 : 24.0),
             child: Card(
-              elevation: 4,
-              child: Padding(
-                padding: const EdgeInsets.all(32.0),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Account Settings',
-                          style: Theme.of(context).textTheme.headlineMedium,
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.arrow_back),
-                          onPressed: () {
-                          context.go("/home");
+              elevation: 8,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: EdgeInsets.all(isMobile ? 16.0 : 32.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Account Settings',
+                            style: theme.textTheme.headlineMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.arrow_back),
+                            onPressed: () => context.go("/home"),
+                            tooltip: 'Back to Home',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 32),
+                      const _ProfileSection(),
+                      const SizedBox(height: 32),
+                      Center(
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.logout),
+                          label: const Text('Logout'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: theme.colorScheme.error,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 32,
+                              vertical: 16,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onPressed: () async {
+                            final confirmed = await showDialog<bool>(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                title: const Text('Confirm Logout'),
+                                content: const Text(
+                                  'Are you sure you want to logout?',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context, false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context, true),
+                                    child: Text(
+                                      'Logout',
+                                      style: TextStyle(
+                                        color: theme.colorScheme.error,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+
+                            if (confirmed == true) {
+                              // Reset all providers first
+                              ProviderReset.resetAllUserProviders(ref);
+                              
+                              // Then sign out
+                              await ref
+                                  .read(authStateNotifierProvider.notifier)
+                                  .signOut();
+
+                              // Navigate to auth page after logout
+                              if (context.mounted) {
+                                Navigator.pushAndRemoveUntil(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const AuthPage(),
+                                  ),
+                                  (route) => false,
+                                );
+                              }
+                            }
                           },
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 32),
-                    const _ProfileSection(),
-                    const SizedBox(height: 32),
-                    Center(
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 48,
-                            vertical: 16,
-                          ),
-                        ),
-                        onPressed: () async {
-                          final confirmed = await showDialog<bool>(
-                            context: context,
-                            builder: (context) => AlertDialog(
-                              title: const Text('Confirm Logout'),
-                              content: const Text(
-                                  'Are you sure you want to logout?'),
-                              actions: [
-                                TextButton(
-                                  onPressed: () =>
-                                      Navigator.pop(context, false),
-                                  child: const Text('Cancel'),
-                                ),
-                                TextButton(
-                                  onPressed: () => Navigator.pop(context, true),
-                                  child: const Text('Logout'),
-                                ),
-                              ],
-                            ),
-                          );
-
-                          if (confirmed == true) {
-                            // Reset all providers first
-                            ProviderReset.resetAllUserProviders(ref);
-                            
-                            // Then sign out
-                            await ref
-                                .read(authStateNotifierProvider.notifier)
-                                .signOut();
-
-                            // Navigate to auth page after logout
-                            if (context.mounted) {
-                              Navigator.pushAndRemoveUntil(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => const AuthPage(),
-                                ),
-                                (route) => false,
-                              );
-                            }
-                          }
-                        },
-                        child: const Text(
-                          'Logout',
-                          style: TextStyle(color: Colors.white),
-                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -138,6 +155,7 @@ class _ProfileSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
     final user = ref.watch(authProvider);
     final ticketsAsync = ref.watch(userTicketsProvider);
 
@@ -146,50 +164,101 @@ class _ProfileSection extends ConsumerWidget {
       children: [
         Text(
           'Profile Information',
-          style: Theme.of(context).textTheme.titleLarge,
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: theme.colorScheme.primary,
+          ),
         ),
         const SizedBox(height: 16),
         Card(
+          elevation: 4,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
               children: [
                 ListTile(
-                  leading: const Icon(Icons.person),
-                  title: const Text('Email'),
-                  subtitle: Text(user?.email ?? 'N/A'),
+                  leading: CircleAvatar(
+                    backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
+                    child: Icon(
+                      Icons.person,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  title: const Text(
+                    'Email',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: Text(
+                    user?.email ?? 'N/A',
+                    style: const TextStyle(fontSize: 16),
+                  ),
                 ),
                 const Divider(),
                 ListTile(
-                  leading: const Icon(Icons.verified_user),
-                  title: const Text('User ID'),
-                  subtitle: Text(user?.id ?? 'N/A'),
+                  leading: CircleAvatar(
+                    backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
+                    child: Icon(
+                      Icons.verified_user,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  title: const Text(
+                    'User ID',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: Text(
+                    user?.id ?? 'N/A',
+                    style: const TextStyle(fontSize: 16),
+                  ),
                 ),
               ],
             ),
           ),
         ),
-      Gap(15),
+        const Gap(24),
         Text(
           'Support Tickets',
-          style: Theme.of(context).textTheme.titleLarge,
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: theme.colorScheme.primary,
+          ),
         ),
-       Gap(5),
+        const Gap(8),
         ticketsAsync.when(
           data: (tickets) {
             if (tickets.isEmpty) {
               return Card(
+                elevation: 4,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
-
                     children: [
-                      const Text('No support tickets found'),
+                      const Text(
+                        'No support tickets found',
+                        style: TextStyle(fontSize: 16),
+                      ),
                       const SizedBox(height: 16),
                       Center(
                         child: ElevatedButton.icon(
                           icon: const Icon(Icons.add),
                           label: const Text('Create Ticket'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: theme.colorScheme.primary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 12,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
                           onPressed: () => _showCreateTicketDialog(context, ref),
                         ),
                       ),
@@ -200,33 +269,56 @@ class _ProfileSection extends ConsumerWidget {
             }
             
             return Card(
+              elevation: 4,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.start,
                 children: [
                   SizedBox(
-
                     height: MediaQuery.of(context).size.height * 0.2,
-                  
                     child: ListView.builder(
+                      padding: EdgeInsets.zero,
                       itemCount: tickets.length,
                       itemBuilder: (context, index) {
                         final ticket = tickets[index];
                         return Card(
-                          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          margin: EdgeInsets.only(
+                            left: 8,
+                            right: 8,
+                            top: index == 0 ? 8 : 4,
+                            bottom: index == tickets.length - 1 ? 8 : 4,
+                          ),
                           elevation: 2,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
                           child: ListTile(
-                            leading: Icon(
-                              _getStatusIcon(ticket.status),
-                              color: _getStatusColor(ticket.status),
+                            leading: CircleAvatar(
+                              backgroundColor: _getStatusColor(ticket.status)
+                                  .withOpacity(0.1),
+                              child: Icon(
+                                _getStatusIcon(ticket.status),
+                                color: _getStatusColor(ticket.status),
+                              ),
                             ),
-                            title: Text(ticket.subject),
+                            title: Text(
+                              ticket.subject,
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
                             subtitle: Text(
                               'Status: ${_getStatusText(ticket.status)} | Priority: ${ticket.priority.toString().split('.').last}',
                             ),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text(_formatDate(ticket.createdAt)),
+                                Text(
+                                  _formatDate(ticket.createdAt),
+                                  style: TextStyle(
+                                    color: theme.colorScheme.onSurface
+                                        .withOpacity(0.7),
+                                  ),
+                                ),
                                 PopupMenuButton<String>(
                                   icon: const Icon(Icons.more_vert),
                                   onSelected: (value) async {
@@ -240,14 +332,18 @@ class _ProfileSection extends ConsumerWidget {
                                           ),
                                           actions: [
                                             TextButton(
-                                              onPressed: () => Navigator.pop(context, false),
+                                              onPressed: () =>
+                                                  Navigator.pop(context, false),
                                               child: const Text('Cancel'),
                                             ),
                                             TextButton(
-                                              onPressed: () => Navigator.pop(context, true),
-                                              child: const Text(
+                                              onPressed: () =>
+                                                  Navigator.pop(context, true),
+                                              child: Text(
                                                 'Delete',
-                                                style: TextStyle(color: Colors.red),
+                                                style: TextStyle(
+                                                  color: theme.colorScheme.error,
+                                                ),
                                               ),
                                             ),
                                           ],
@@ -328,70 +424,30 @@ class _ProfileSection extends ConsumerWidget {
                                   },
                                   itemBuilder: (context) => [
                                     if (ticket.status != TicketStatus.closed)
-                                      const PopupMenuItem<String>(
+                                      const PopupMenuItem(
                                         value: 'close',
-                                        child: Row(
-                                          children: [
-                                            Icon(Icons.check_circle, color: Colors.green),
-                                            SizedBox(width: 8),
-                                            Text('Close Ticket'),
-                                          ],
-                                        ),
+                                        child: Text('Close Ticket'),
                                       ),
-                                    const PopupMenuItem<String>(
+                                    const PopupMenuItem(
                                       value: 'delete',
-                                      child: Row(
-                                        children: [
-                                          Icon(Icons.delete, color: Colors.red),
-                                          SizedBox(width: 8),
-                                          Text('Delete', style: TextStyle(color: Colors.red)),
-                                        ],
-                                      ),
+                                      child: Text('Delete'),
                                     ),
                                   ],
                                 ),
                               ],
                             ),
-                            onTap: () => _showTicketDetails(context, ref, ticket),
                           ),
                         );
                       },
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(10.0),
-                    child: Center(
-                      child: ElevatedButton.icon(
-                        icon: const Icon(Icons.add),
-                        label: const Text('Create New Ticket'),
-                        onPressed: () => _showCreateTicketDialog(context, ref),
-                      ),
                     ),
                   ),
                 ],
               ),
             );
           },
-          loading: () => const Center(
-            child: CircularProgressIndicator(),
-          ),
-          error: (error, stack) => Card(
-            child: Padding(
-              padding: const EdgeInsets.all(5.0),
-              child: Column(
-                children: [
-                  const Icon(Icons.error_outline, color: Colors.red, size: 48),
-                  const SizedBox(height: 16),
-                  Text('Error loading tickets: $error'),
-                  const SizedBox(height: 16),
-                  ElevatedButton.icon(
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Retry'),
-                    onPressed: () => ref.invalidate(userTicketsProvider),
-                  ),
-                ],
-              ),
-            ),
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, stackTrace) => Center(
+            child: Text('Error loading tickets: $error'),
           ),
         ),
       ],
@@ -530,139 +586,12 @@ class _ProfileSection extends ConsumerWidget {
                   ),
                 );
                 ref.invalidate(userTicketsProvider);
-                            }
+              }
             },
             child: const Text('Create'),
           ),
         ],
       ),
     );
-  }
-  
-  void _showTicketDetails(BuildContext context, WidgetRef ref, SupportTicket ticket) {
-    final messageController = TextEditingController();
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(ticket.subject),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Status: ${_getStatusText(ticket.status)}'),
-              Text('Priority: ${ticket.priority.toString().split('.').last}'),
-              Text('Created: ${_formatDate(ticket.createdAt)}'),
-              const SizedBox(height: 16),
-              const Text('Messages:', style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: ticket.messages.length,
-                  itemBuilder: (context, index) {
-                    final message = ticket.messages[index];
-                    return Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              message.senderName,
-                              style: const TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(message.message),
-                            const SizedBox(height: 4),
-                            Text(
-                              _formatTime(message.timestamp),
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: messageController,
-                decoration: const InputDecoration(
-                  labelText: 'New Message',
-                  hintText: 'Type your message',
-                ),
-                maxLines: 3,
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              if (Navigator.of(context).canPop()) {
-                Navigator.of(context).pop();
-              }
-            },
-            child: const Text('Close'),
-          ),
-          TextButton(
-            onPressed: () async {
-              if (messageController.text.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Please enter a message'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-                return;
-              }
-              
-              final notifier = ref.read(messageSendingProvider.notifier);
-              final success = await notifier.sendMessage(
-                ticketId: ticket.id,
-                message: messageController.text,
-              );
-              
-              if (success) {
-                if (context.mounted) {
-                  // Close the dialog first
-                  Navigator.of(context).pop();
-                  
-                  // Then show success message
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Message sent successfully'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                  
-                  // Finally refresh the data
-                  ref.invalidate(userTicketsProvider);
-                  ref.invalidate(ticketByIdProvider(ticket.id));
-                }
-              } else {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Failed to send message'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              }
-            },
-            child: const Text('Send'),
-          ),
-        ],
-      ),
-    );
-  }
-  
-  String _formatTime(DateTime dateTime) {
-    return '${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}';
   }
 }
