@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
+import 'package:stock_app/models/linked_account.dart';
+import 'package:stock_app/providers/linked_accounts_provider.dart';
+import 'package:stock_app/services/auth_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:stock_app/pages/auth_page.dart';
 import 'package:stock_app/providers/auth_state_provider.dart';
@@ -59,7 +62,6 @@ class AccountPage extends ConsumerWidget {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-
                           Material(
                             color: Colors.transparent,
                             child: InkWell(
@@ -127,11 +129,13 @@ class AccountPage extends ConsumerWidget {
                                 ),
                                 actions: [
                                   TextButton(
-                                    onPressed: () => Navigator.pop(context, false),
+                                    onPressed: () =>
+                                        Navigator.pop(context, false),
                                     child: const Text('Cancel'),
                                   ),
                                   TextButton(
-                                    onPressed: () => Navigator.pop(context, true),
+                                    onPressed: () =>
+                                        Navigator.pop(context, true),
                                     child: Text(
                                       'Logout',
                                       style: TextStyle(
@@ -146,7 +150,7 @@ class AccountPage extends ConsumerWidget {
                             if (confirmed == true) {
                               // Reset all providers first
                               ProviderReset.resetAllUserProviders(ref);
-                              
+
                               // Then sign out
                               await ref
                                   .read(authStateNotifierProvider.notifier)
@@ -187,6 +191,8 @@ class _ProfileSection extends ConsumerWidget {
     final user = ref.watch(authProvider);
     final ticketsAsync = ref.watch(userTicketsProvider);
     final selectedTimeZone = ref.watch(timeZoneProvider);
+    final linkedAccountsAsync = ref.watch(linkedAccountsProvider);
+    final accountSwitchState = ref.watch(accountSwitchStateProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -208,6 +214,109 @@ class _ProfileSection extends ConsumerWidget {
             padding: const EdgeInsets.all(16.0),
             child: Column(
               children: [
+                // Account switching dropdown
+                linkedAccountsAsync.when(
+                  data: (accounts) {
+                    if (accounts.isEmpty) {
+                      return const SizedBox.shrink();
+                    }
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.account_circle,
+                              color: theme.colorScheme.primary,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Switch Account',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              value: user?.email,
+                              isExpanded: true,
+                              icon: const Icon(Icons.arrow_drop_down),
+                              items: accounts.map((LinkedAccount account) {
+                                return DropdownMenuItem<String>(
+                                  value: account.email,
+                                  child: Row(
+                                    children: [
+                                      if (account.photoUrl != null) ...[
+                                        CircleAvatar(
+                                          backgroundImage:
+                                              NetworkImage(account.photoUrl!),
+                                          radius: 12,
+                                        ),
+                                        const SizedBox(width: 8),
+                                      ] else ...[
+                                        const CircleAvatar(
+                                          child: Icon(Icons.person, size: 12),
+                                          radius: 12,
+                                        ),
+                                        const SizedBox(width: 8),
+                                      ],
+                                      Expanded(
+                                        child: Text(
+                                          account.email,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: (value) {
+                                if (value != user?.email) {
+                                  _showSwitchAccountDialog(
+                                      context,
+                                      ref,
+                                      accounts
+                                          .firstWhere((a) => a.email == value));
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        ElevatedButton.icon(
+                          icon: const Icon(Icons.add),
+                          label: const Text('Add Account'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: theme.colorScheme.primaryContainer,
+                            foregroundColor:
+                                theme.colorScheme.onPrimaryContainer,
+                          ),
+                          onPressed: () => _showAddAccountDialog(context, ref),
+                        ),
+                        const Divider(height: 24),
+                      ],
+                    );
+                  },
+                  loading: () => const SizedBox(
+                    height: 40,
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                  error: (error, _) => Text('Error: $error'),
+                ),
+
+                // Existing account info
                 ListTile(
                   leading: CircleAvatar(
                     backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
@@ -247,7 +356,6 @@ class _ProfileSection extends ConsumerWidget {
             ),
           ),
         ),
-        
         const Gap(24),
         Text(
           'Display Settings',
@@ -345,7 +453,8 @@ class _ProfileSection extends ConsumerWidget {
                               borderRadius: BorderRadius.circular(8),
                             ),
                           ),
-                          onPressed: () => _showCreateTicketDialog(context, ref),
+                          onPressed: () =>
+                              _showCreateTicketDialog(context, ref),
                         ),
                       ),
                     ],
@@ -353,7 +462,7 @@ class _ProfileSection extends ConsumerWidget {
                 ),
               );
             }
-            
+
             return Card(
               elevation: 4,
               shape: RoundedRectangleBorder(
@@ -390,7 +499,8 @@ class _ProfileSection extends ConsumerWidget {
                             ),
                             title: Text(
                               ticket.subject,
-                              style: const TextStyle(fontWeight: FontWeight.bold),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold),
                             ),
                             subtitle: Text(
                               'Status: ${_getStatusText(ticket.status)} | Priority: ${ticket.priority.toString().split('.').last}',
@@ -428,7 +538,8 @@ class _ProfileSection extends ConsumerWidget {
                                               child: Text(
                                                 'Delete',
                                                 style: TextStyle(
-                                                  color: theme.colorScheme.error,
+                                                  color:
+                                                      theme.colorScheme.error,
                                                 ),
                                               ),
                                             ),
@@ -438,11 +549,15 @@ class _ProfileSection extends ConsumerWidget {
 
                                       if (confirmed == true) {
                                         try {
-                                          await ref.read(supabaseServiceProvider).deleteTicket(ticket.id);
+                                          await ref
+                                              .read(supabaseServiceProvider)
+                                              .deleteTicket(ticket.id);
                                           if (context.mounted) {
-                                            ScaffoldMessenger.of(context).showSnackBar(
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
                                               const SnackBar(
-                                                content: Text('Ticket deleted successfully'),
+                                                content: Text(
+                                                    'Ticket deleted successfully'),
                                                 backgroundColor: Colors.green,
                                               ),
                                             );
@@ -450,16 +565,19 @@ class _ProfileSection extends ConsumerWidget {
                                           }
                                         } catch (e) {
                                           if (context.mounted) {
-                                            ScaffoldMessenger.of(context).showSnackBar(
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
                                               SnackBar(
-                                                content: Text('Error deleting ticket: $e'),
+                                                content: Text(
+                                                    'Error deleting ticket: $e'),
                                                 backgroundColor: Colors.red,
                                               ),
                                             );
                                           }
                                         }
                                       }
-                                    } else if (value == 'close' && ticket.status != TicketStatus.closed) {
+                                    } else if (value == 'close' &&
+                                        ticket.status != TicketStatus.closed) {
                                       final confirmed = await showDialog<bool>(
                                         context: context,
                                         builder: (context) => AlertDialog(
@@ -469,11 +587,13 @@ class _ProfileSection extends ConsumerWidget {
                                           ),
                                           actions: [
                                             TextButton(
-                                              onPressed: () => Navigator.pop(context, false),
+                                              onPressed: () =>
+                                                  Navigator.pop(context, false),
                                               child: const Text('Cancel'),
                                             ),
                                             TextButton(
-                                              onPressed: () => Navigator.pop(context, true),
+                                              onPressed: () =>
+                                                  Navigator.pop(context, true),
                                               child: const Text('Close'),
                                             ),
                                           ],
@@ -482,14 +602,18 @@ class _ProfileSection extends ConsumerWidget {
 
                                       if (confirmed == true) {
                                         try {
-                                          await ref.read(supabaseServiceProvider).updateTicketStatus(
-                                            ticketId: ticket.id,
-                                            status: TicketStatus.closed,
-                                          );
+                                          await ref
+                                              .read(supabaseServiceProvider)
+                                              .updateTicketStatus(
+                                                ticketId: ticket.id,
+                                                status: TicketStatus.closed,
+                                              );
                                           if (context.mounted) {
-                                            ScaffoldMessenger.of(context).showSnackBar(
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
                                               const SnackBar(
-                                                content: Text('Ticket closed successfully'),
+                                                content: Text(
+                                                    'Ticket closed successfully'),
                                                 backgroundColor: Colors.green,
                                               ),
                                             );
@@ -497,9 +621,11 @@ class _ProfileSection extends ConsumerWidget {
                                           }
                                         } catch (e) {
                                           if (context.mounted) {
-                                            ScaffoldMessenger.of(context).showSnackBar(
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
                                               SnackBar(
-                                                content: Text('Error closing ticket: $e'),
+                                                content: Text(
+                                                    'Error closing ticket: $e'),
                                                 backgroundColor: Colors.red,
                                               ),
                                             );
@@ -539,7 +665,7 @@ class _ProfileSection extends ConsumerWidget {
       ],
     );
   }
-  
+
   IconData _getStatusIcon(TicketStatus status) {
     switch (status) {
       case TicketStatus.open:
@@ -550,7 +676,7 @@ class _ProfileSection extends ConsumerWidget {
         return Icons.mark_email_read;
     }
   }
-  
+
   Color _getStatusColor(TicketStatus status) {
     switch (status) {
       case TicketStatus.open:
@@ -561,7 +687,7 @@ class _ProfileSection extends ConsumerWidget {
         return Colors.green;
     }
   }
-  
+
   String _getStatusText(TicketStatus status) {
     switch (status) {
       case TicketStatus.open:
@@ -572,11 +698,11 @@ class _ProfileSection extends ConsumerWidget {
         return 'Closed';
     }
   }
-  
+
   String _formatDate(DateTime dateTime) {
     return '${dateTime.day}/${dateTime.month}/${dateTime.year}';
   }
-  
+
   void _showCreateTicketDialog(BuildContext context, WidgetRef ref) {
     final subjectController = TextEditingController();
     final descriptionController = TextEditingController();
@@ -652,15 +778,16 @@ class _ProfileSection extends ConsumerWidget {
                 return;
               }
 
-              final ticket = await ref
-                  .read(supportTicketServiceProvider)
-                  .createTicket(
-                    subject: subjectController.text,
-                    description: descriptionController.text,
-                    priority: TicketPriority.values.firstWhere(
-                      (p) => p.toString().split('.').last.toLowerCase() == selectedPriority,
-                    ),
-                  );
+              final ticket =
+                  await ref.read(supportTicketServiceProvider).createTicket(
+                        subject: subjectController.text,
+                        description: descriptionController.text,
+                        priority: TicketPriority.values.firstWhere(
+                          (p) =>
+                              p.toString().split('.').last.toLowerCase() ==
+                              selectedPriority,
+                        ),
+                      );
 
               if (context.mounted) {
                 if (Navigator.of(context).canPop()) {
@@ -680,4 +807,185 @@ class _ProfileSection extends ConsumerWidget {
       ),
     );
   }
+
+  // Method to show account switching dialog
+  void _showSwitchAccountDialog(
+      BuildContext context, WidgetRef ref, LinkedAccount account) {
+    final passwordController = TextEditingController();
+
+    // Store references to notifiers before async operations
+    final authStateNotifier = ref.read(authStateNotifierProvider.notifier);
+    final accountSwitchNotifier = ref.read(accountSwitchStateProvider.notifier);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Switch to ${account.email}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Enter your password to continue:'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: passwordController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Password',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (passwordController.text.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please enter your password')),
+                );
+                return;
+              }
+
+              Navigator.pop(context);
+
+              // Set switching state
+              accountSwitchNotifier.state = AccountSwitchState.switching;
+
+              try {
+                await authStateNotifier.switchAccount(
+                    account.email, passwordController.text);
+
+                if (context.mounted) {
+                  // Use Builder to get a fresh ref if needed
+                  Builder(builder: (context) {
+                    // Refresh the tickets provider
+                    ProviderScope.containerOf(context)
+                        .refresh(userTicketsProvider);
+                    return const SizedBox.shrink();
+                  });
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Switched to ${account.email}')),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to switch account: $e')),
+                  );
+                }
+              } finally {
+                // Only reset state if still mounted
+                if (context.mounted) {
+                  accountSwitchNotifier.state = AccountSwitchState.idle;
+                }
+              }
+            },
+            child: const Text('Switch'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Method to show add account dialog
+  void _showAddAccountDialog(BuildContext context, WidgetRef ref) {
+    final emailController = TextEditingController();
+    final passwordController = TextEditingController();
+
+    // Store a reference to the notifier before any async operations
+    final authStateNotifier = ref.read(authStateNotifierProvider.notifier);
+    final accountSwitchNotifier = ref.read(accountSwitchStateProvider.notifier);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Account'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: emailController,
+              decoration: const InputDecoration(
+                labelText: 'Email',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.emailAddress,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: passwordController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Password',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (emailController.text.isEmpty ||
+                  passwordController.text.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please fill all fields')),
+                );
+                return;
+              }
+
+              Navigator.pop(context);
+
+              // Set switching state
+              accountSwitchNotifier.state = AccountSwitchState.switching;
+
+              try {
+                // Sign in with new account
+                await authStateNotifier.signIn(
+                    emailController.text, passwordController.text);
+
+                // Use a Builder widget to obtain a fresh ref if needed in UI updates
+                if (context.mounted) {
+                  // Use fresh ref inside the mounted check
+                  Builder(builder: (context) {
+                    final freshRef = ProviderScope.containerOf(context)
+                        .refresh(linkedAccountsProvider);
+                    return const SizedBox.shrink();
+                  });
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content: Text('Added account ${emailController.text}')),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to add account: $e')),
+                  );
+                }
+              } finally {
+                // Only reset state if the widget is still mounted
+                if (context.mounted) {
+                  accountSwitchNotifier.state = AccountSwitchState.idle;
+                }
+              }
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Rest of your existing methods...
 }

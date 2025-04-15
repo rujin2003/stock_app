@@ -5,17 +5,23 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:stock_app/models/user_data.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
+import 'package:stock_app/models/linked_account.dart';
 // import 'package:url_launcher/url_launcher.dart';
 
 class AuthService {
   final SupabaseClient _client = Supabase.instance.client;
 
-Future<void> signUp({required String email, required String password}) async {
+  // Key for storing linked accounts
+  static const String _linkedAccountsKey = 'linked_accounts';
+
+  Future<void> signUp({required String email, required String password}) async {
     await _client.auth.signUp(
       email: email,
       password: password,
     );
-}
+  }
 
   Future<void> signIn({required String email, required String password}) async {
     final response = await _client.auth.signInWithPassword(
@@ -39,7 +45,6 @@ Future<void> signUp({required String email, required String password}) async {
   Future<void> resetPassword({required String email}) async {
     await _client.auth.resetPasswordForEmail(email);
   }
-  
 
   User? getCurrentUser() {
     final user = _client.auth.currentUser;
@@ -126,5 +131,66 @@ Future<void> signUp({required String email, required String password}) async {
       developer.log('Error fetching user data: $e', name: 'AuthService');
       return null;
     }
+  }
+
+  // Get all linked accounts
+  Future<List<LinkedAccount>> getLinkedAccounts() async {
+    final prefs = await SharedPreferences.getInstance();
+    final linkedAccountsJson = prefs.getStringList(_linkedAccountsKey) ?? [];
+
+    return linkedAccountsJson
+        .map((json) => LinkedAccount.fromJson(jsonDecode(json)))
+        .toList();
+  }
+
+  // Add current user to linked accounts
+  Future<void> addCurrentUserToLinkedAccounts() async {
+    final currentUser = getCurrentUser();
+    if (currentUser == null) return;
+
+    final linkedAccount = LinkedAccount.fromUser(currentUser);
+    await _saveLinkedAccount(linkedAccount);
+  }
+
+  // Save a linked account
+  Future<void> _saveLinkedAccount(LinkedAccount account) async {
+    final prefs = await SharedPreferences.getInstance();
+    final linkedAccounts = await getLinkedAccounts();
+
+    // Check if account already exists
+    final existingIndex = linkedAccounts.indexWhere((a) => a.id == account.id);
+    if (existingIndex >= 0) {
+      linkedAccounts[existingIndex] = account;
+    } else {
+      linkedAccounts.add(account);
+    }
+
+    // Save back to shared preferences
+    final linkedAccountsJson =
+        linkedAccounts.map((account) => jsonEncode(account.toJson())).toList();
+
+    await prefs.setStringList(_linkedAccountsKey, linkedAccountsJson);
+  }
+
+  // Remove a linked account
+  Future<void> removeLinkedAccount(String accountId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final linkedAccounts = await getLinkedAccounts();
+
+    linkedAccounts.removeWhere((account) => account.id == accountId);
+
+    final linkedAccountsJson =
+        linkedAccounts.map((account) => jsonEncode(account.toJson())).toList();
+
+    await prefs.setStringList(_linkedAccountsKey, linkedAccountsJson);
+  }
+
+  // Switch to another account
+  Future<void> switchToAccount(String email, String password) async {
+    // Sign out current user
+    await signOut();
+
+    // Sign in with the new account
+    await signIn(email: email, password: password);
   }
 }

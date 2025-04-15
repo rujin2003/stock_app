@@ -16,7 +16,7 @@ part 'auth_state_provider.g.dart';
 @riverpod
 class AuthStateNotifier extends _$AuthStateNotifier {
   late final AuthService _authService = AuthService();
-  
+
   @override
   AuthState build() {
     if (_authService.getCurrentUser() != null) {
@@ -24,17 +24,20 @@ class AuthStateNotifier extends _$AuthStateNotifier {
     }
     return const AuthState(status: AuthStatus.unauthenticated);
   }
-  
+
   Future<void> signIn(String email, String password) async {
     state = state.copyWith(status: AuthStatus.authenticating);
     try {
       // Ensure we're fully logged out before attempting login
       await _authService.signOut();
-      
+
       // Reset other providers after sign out
-    
-      
+
       await _authService.signIn(email: email, password: password);
+
+      // Add the user to linked accounts
+      await _authService.addCurrentUserToLinkedAccounts();
+
       state = state.copyWith(status: AuthStatus.authenticated);
     } catch (e) {
       state = state.copyWith(
@@ -43,15 +46,15 @@ class AuthStateNotifier extends _$AuthStateNotifier {
       );
     }
   }
-  
+
   Future<void> signUp(String email, String password) async {
     state = state.copyWith(status: AuthStatus.authenticating);
     try {
       await _authService.signUp(email: email, password: password);
       // Set to unauthenticated after signup since a session is not created
       state = state.copyWith(
-        status: AuthStatus.unauthenticated,
-        errorMessage: "Registration successful! Please sign in.");
+          status: AuthStatus.unauthenticated,
+          errorMessage: "Registration successful! Please sign in.");
     } catch (e) {
       state = state.copyWith(
         status: AuthStatus.error,
@@ -59,17 +62,16 @@ class AuthStateNotifier extends _$AuthStateNotifier {
       );
     }
   }
-  
+
   Future<void> signOut() async {
     try {
       // First sign out from the service
       await _authService.signOut();
-      
+
       // Update state to unauthenticated first
       state = const AuthState(status: AuthStatus.unauthenticated);
-      
-      // Then reset all providers to clear user data
 
+      // Then reset all providers to clear user data
     } catch (e) {
       state = state.copyWith(
         status: AuthStatus.error,
@@ -77,11 +79,10 @@ class AuthStateNotifier extends _$AuthStateNotifier {
       );
     }
   }
-  
+
   Future<void> signInWithGoogle() async {
     // First reset all providers to clear previous user data
- 
-    
+
     state = state.copyWith(status: AuthStatus.authenticating);
     try {
       await _authService.signOut();
@@ -94,7 +95,7 @@ class AuthStateNotifier extends _$AuthStateNotifier {
       );
     }
   }
-  
+
   Future<void> resetPassword(String email) async {
     try {
       await _authService.resetPassword(email: email);
@@ -105,11 +106,25 @@ class AuthStateNotifier extends _$AuthStateNotifier {
       );
     }
   }
-  
+
   void clearError() {
     state = state.copyWith(
       status: AuthStatus.unauthenticated,
       errorMessage: null,
     );
+  }
+
+  // Add new method for account switching
+  Future<void> switchAccount(String email, String password) async {
+    state = state.copyWith(status: AuthStatus.authenticating);
+    try {
+      await _authService.switchToAccount(email, password);
+      state = state.copyWith(status: AuthStatus.authenticated);
+    } catch (e) {
+      state = state.copyWith(
+        status: AuthStatus.error,
+        errorMessage: e.toString(),
+      );
+    }
   }
 }

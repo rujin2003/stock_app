@@ -116,7 +116,7 @@ class TradePage extends ConsumerWidget {
     final equityAsync = ref.watch(userEquityProvider);
 
     return DefaultTabController(
-      length: 3,
+      length: 2,
       child: Scaffold(
         appBar: AppBar(
           toolbarHeight: 100, // Increase height to accommodate account info
