@@ -7,6 +7,7 @@ import '../models/symbol.dart';
 import '../providers/chart_provider.dart';
 import '../services/chart_service.dart';
 import '../widgets/responsive_layout.dart';
+import '../providers/time_zone_provider.dart';
 
 class StockChart extends ConsumerStatefulWidget {
   final Symbol? symbol;
@@ -335,6 +336,9 @@ class _StockChartState extends ConsumerState<StockChart> {
     final isMobile = ResponsiveLayout.isMobile(context);
     final kLineType = ref.watch(selectedKLineTypeProvider);
 
+    // Get the selected time zone
+    final selectedTimeZone = ref.watch(timeZoneProvider);
+    
     // Determine appropriate date format and interval type based on kLineType
     DateFormat dateFormat;
     DateTimeIntervalType intervalType;

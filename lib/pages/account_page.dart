@@ -13,6 +13,7 @@ import 'package:stock_app/layouts/desktop_layout.dart';
 import 'package:stock_app/widgets/responsive_layout.dart';
 import 'package:stock_app/providers/provider_reset.dart';
 import 'package:stock_app/pages/admin/admin_service/tickets_service/tick_service.dart';
+import 'package:stock_app/providers/time_zone_provider.dart';
 
 // Add Supabase service provider
 final supabaseServiceProvider = Provider<SupabaseService>((ref) {
@@ -54,9 +55,25 @@ class AccountPage extends ConsumerWidget {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Gap(20),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
+
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(24),
+                              onTap: () => context.go("/home"),
+                              child: Padding(
+                                padding: const EdgeInsets.all(12.0),
+                                child: Icon(
+                                  Icons.arrow_back_ios_new,
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                            ),
+                          ),
                           Text(
                             'Account Settings',
                             style: theme.textTheme.headlineMedium?.copyWith(
@@ -64,10 +81,21 @@ class AccountPage extends ConsumerWidget {
                               color: theme.colorScheme.primary,
                             ),
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.arrow_back),
-                            onPressed: () => context.go("/home"),
-                            tooltip: 'Back to Home',
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(24),
+                              onTap: () {
+                                // Add settings action here
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.all(12.0),
+                                child: Icon(
+                                  Icons.settings,
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -158,6 +186,7 @@ class _ProfileSection extends ConsumerWidget {
     final theme = Theme.of(context);
     final user = ref.watch(authProvider);
     final ticketsAsync = ref.watch(userTicketsProvider);
+    final selectedTimeZone = ref.watch(timeZoneProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -214,6 +243,63 @@ class _ProfileSection extends ConsumerWidget {
                     style: const TextStyle(fontSize: 16),
                   ),
                 ),
+              ],
+            ),
+          ),
+        ),
+        
+        const Gap(24),
+        Text(
+          'Display Settings',
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: theme.colorScheme.primary,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Card(
+          elevation: 4,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Time Zone',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Select your preferred time zone for displaying timestamps throughout the app:',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: theme.colorScheme.onSurface.withOpacity(0.7),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Radio buttons for time zone selection
+                ...TimeZone.values.map((timeZone) {
+                  return RadioListTile<TimeZone>(
+                    title: Text(timeZoneDisplayNames[timeZone] ?? ''),
+                    subtitle: Text(timeZoneOffsets[timeZone] ?? ''),
+                    value: timeZone,
+                    groupValue: selectedTimeZone,
+                    onChanged: (value) {
+                      if (value != null) {
+                        ref.read(timeZoneProvider.notifier).setTimeZone(value);
+                      }
+                    },
+                    activeColor: theme.colorScheme.primary,
+                    dense: true,
+                  );
+                }).toList(),
               ],
             ),
           ),

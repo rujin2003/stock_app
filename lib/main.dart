@@ -6,6 +6,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:stock_app/services/websocket_service.dart';
 import 'package:stock_app/theme/app_theme_data.dart';
 
+
+
+
 Future<void> main() async { 
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -43,7 +46,6 @@ class MyApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Get the router from the provider
     final router = ref.watch(routerProvider);
     
     return MaterialApp.router(
@@ -51,6 +53,8 @@ class MyApp extends ConsumerWidget {
       theme: appThemeData,
       routerConfig: router,
     );
+
+
   }
 }
 

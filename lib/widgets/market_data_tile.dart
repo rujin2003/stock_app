@@ -10,6 +10,7 @@ import '../providers/chart_provider.dart';
 import '../services/chart_service.dart';
 import '../widgets/responsive_layout.dart';
 import '../layouts/mobile_layout.dart';
+import '../providers/time_zone_provider.dart';
 
 // Create a simple provider to track price changes
 final priceChangeProvider =
@@ -91,7 +92,7 @@ class MarketDataTile extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           child: marketDataAsyncValue.when(
               data: (marketData) => _buildTileContent(
-                  marketData, theme, priceChanged, isIncreasing),
+                  marketData, theme, priceChanged, isIncreasing, ref),
               loading: () => _buildLoadingPlaceholder(),
               error: (error, stack) {
                 log('Error loading market data: $error $stack');
@@ -150,6 +151,7 @@ class MarketDataTile extends ConsumerWidget {
     ThemeData theme,
     bool priceChanged,
     bool isIncreasing,
+    WidgetRef ref,
   ) {
     final priceFormat = NumberFormat.currency(
       symbol: '',
@@ -187,10 +189,12 @@ class MarketDataTile extends ConsumerWidget {
       formattedChange = "$changeSign${changeAmount.abs().toStringAsFixed(2)}";
     }
 
-    // Get time
+ 
+    final selectedTimeZone = ref.watch(timeZoneProvider);
     final now = DateTime.now();
+    final convertedTime = convertToTimeZone(now, selectedTimeZone);
     final timeFormat = DateFormat('HH:mm:ss');
-    final formattedTime = timeFormat.format(now);
+    final formattedTime = timeFormat.format(convertedTime);
 
     // Format the last price
     String lastPrice = priceFormat.format(data.lastPrice);
