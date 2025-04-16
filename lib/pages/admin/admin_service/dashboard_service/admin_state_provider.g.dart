@@ -7,7 +7,7 @@ part of 'admin_state_provider.dart';
 // **************************************************************************
 
 String _$adminStateNotifierHash() =>
-    r'bd8b8765c3ed88b8a6e523a3d5541c2581f9f55d';
+    r'a67ccadca2239fc751e6335e2e371a73c6c26105';
 
 /// See also [AdminStateNotifier].
 @ProviderFor(AdminStateNotifier)
