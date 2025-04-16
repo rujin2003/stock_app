@@ -1,14 +1,6 @@
-import 'package:flutter_riverpod/src/consumer.dart';
+import 'dart:developer';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:stock_app/models/auth_state.dart';
-import 'package:stock_app/pages/admin/admin_service/ticket_provider.dart';
-import 'package:stock_app/providers/auth_provider.dart' show authProvider;
-import 'package:stock_app/providers/market_data_provider.dart';
-import 'package:stock_app/providers/market_watcher_provider.dart';
-import 'package:stock_app/providers/symbol_provider.dart';
-import 'package:stock_app/providers/time_filter_provider.dart';
-import 'package:stock_app/providers/trade_provider.dart';
-import 'package:stock_app/providers/user_verification_provider.dart';
 import 'package:stock_app/services/auth_service.dart';
 import 'package:stock_app/providers/provider_reset.dart';
 part 'auth_state_provider.g.dart';
@@ -68,10 +60,11 @@ class AuthStateNotifier extends _$AuthStateNotifier {
       // First sign out from the service
       await _authService.signOut();
 
-      // Update state to unauthenticated first
-      state = const AuthState(status: AuthStatus.unauthenticated);
-
       // Then reset all providers to clear user data
+      ProviderReset.resetAllUserProvidersFromProvider(ref);
+
+      // Update state to unauthenticated
+      state = const AuthState(status: AuthStatus.unauthenticated);
     } catch (e) {
       state = state.copyWith(
         status: AuthStatus.error,
@@ -81,14 +74,16 @@ class AuthStateNotifier extends _$AuthStateNotifier {
   }
 
   Future<void> signInWithGoogle() async {
-    // First reset all providers to clear previous user data
-
     state = state.copyWith(status: AuthStatus.authenticating);
     try {
+      // First ensure we're logged out and providers are reset
       await _authService.signOut();
+      ProviderReset.resetAllUserProvidersFromProvider(ref);
+
       await _authService.googleSignIn();
       state = state.copyWith(status: AuthStatus.authenticated);
     } catch (e) {
+      log(e.toString());
       state = state.copyWith(
         status: AuthStatus.error,
         errorMessage: e.toString(),
@@ -118,6 +113,11 @@ class AuthStateNotifier extends _$AuthStateNotifier {
   Future<void> switchAccount(String email, String password) async {
     state = state.copyWith(status: AuthStatus.authenticating);
     try {
+      // First log out and reset providers
+      await _authService.signOut();
+      ProviderReset.resetAllUserProvidersFromProvider(ref);
+
+      // Then switch to the new account
       await _authService.switchToAccount(email, password);
       state = state.copyWith(status: AuthStatus.authenticated);
     } catch (e) {
