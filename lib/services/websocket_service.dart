@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../models/market_data.dart';
+import 'yahoo_finance_service.dart';
 
 enum MarketType {
   stock,
@@ -38,6 +39,10 @@ class WebSocketService {
   final Map<MarketType, List<String>> _pendingSymbols = {};
   final Map<MarketType, Timer?> _reconnectTimers = {};
   final Map<MarketType, int> _reconnectAttempts = {};
+  final Map<String, Timer?> _subscriptionTimeouts = {};
+  final Map<String, MarketData?> _lastMarketData = {};
+  final Duration _subscriptionTimeout = const Duration(seconds: 10);
+  final YahooFinanceService _yahooFinanceService = YahooFinanceService();
 
   String? _authToken;
   static const int _maxReconnectAttempts = 5;
@@ -162,6 +167,9 @@ class WebSocketService {
     final channel = _channels[marketType];
     if (channel == null) return;
 
+    // Cancel any existing timeout
+    _subscriptionTimeouts[symbol]?.cancel();
+
     final subscribeMessage = {
       'ac': 'subscribe',
       'params': symbol,
@@ -173,6 +181,20 @@ class WebSocketService {
     if (!_pendingSubscriptions.containsKey(symbol)) {
       _pendingSubscriptions[symbol] = Completer<void>();
     }
+
+    // Set up timeout for this subscription
+    _subscriptionTimeouts[symbol] = Timer(_subscriptionTimeout, () async {
+      debugPrint('WebSocket subscription timeout for $symbol, falling back to Yahoo Finance');
+      
+      // Try to get data from Yahoo Finance
+      final yahooData = await _yahooFinanceService.getMarketData(symbol);
+      if (yahooData != null) {
+        _lastMarketData[symbol] = yahooData;
+        if (_symbolStreamControllers.containsKey(symbol)) {
+          _symbolStreamControllers[symbol]!.add(yahooData);
+        }
+      }
+    });
   }
 
   void _handleMessage(dynamic message, MarketType marketType) {
@@ -219,6 +241,13 @@ class WebSocketService {
         final marketData = MarketData.fromJson(data['data']);
         final symbol = marketData.symbol;
 
+        // Cancel the timeout since we received data
+        _subscriptionTimeouts[symbol]?.cancel();
+        _subscriptionTimeouts.remove(symbol);
+
+        // Store the last market data
+        _lastMarketData[symbol] = marketData;
+
         if (_symbolStreamControllers.containsKey(symbol)) {
           _symbolStreamControllers[symbol]!.add(marketData);
         }
@@ -261,6 +290,10 @@ class WebSocketService {
     final channel = _channels[marketType];
     if (channel == null) return;
 
+    // Cancel any pending timeout
+    _subscriptionTimeouts[symbol]?.cancel();
+    _subscriptionTimeouts.remove(symbol);
+
     final unsubscribeMessage = {
       'ac': 'unsubscribe',
       'params': symbol,
@@ -272,6 +305,9 @@ class WebSocketService {
     // Clean up the stream controller
     _symbolStreamControllers[symbol]?.close();
     _symbolStreamControllers.remove(symbol);
+
+    // Remove stored market data
+    _lastMarketData.remove(symbol);
   }
 
   MarketType getMarketTypeForSymbol(String symbol) {
@@ -291,5 +327,9 @@ class WebSocketService {
 
   ConnectionState getConnectionState(MarketType marketType) {
     return _connectionStates[marketType] ?? ConnectionState.disconnected;
+  }
+
+  MarketData? getLastMarketData(String symbol) {
+    return _lastMarketData[symbol];
   }
 }

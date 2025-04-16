@@ -31,9 +31,6 @@ final marketDataProvider =
   // Create a stream controller for this symbol
   final controller = StreamController<MarketData>.broadcast();
   
-  // If we have a last value, emit it immediately
-
-  
   // Subscribe to the symbol
   webSocketService.subscribeToSymbol(symbol, marketType).then((_) {
     // Get the stream for this symbol
@@ -49,8 +46,6 @@ final marketDataProvider =
         onError: (error) {
           debugPrint('Error in market data stream for $symbol: $error');
           if (!controller.isClosed) {
-            // On error, try to emit the last value if available
-          
             controller.addError(error);
           }
         },
@@ -58,7 +53,10 @@ final marketDataProvider =
           debugPrint('Market data stream closed for $symbol');
           if (!controller.isClosed) {
             // On done (disconnection), try to emit the last value if available
-           
+            final lastData = webSocketService.getLastMarketData(symbol);
+            if (lastData != null) {
+              controller.add(lastData);
+            }
           }
         },
       );
