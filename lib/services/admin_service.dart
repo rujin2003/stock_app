@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:developer' as developer;
+import 'package:stock_app/utils/id_hash.dart';
 
 class AdminService {
   final SupabaseClient _client = Supabase.instance.client;
@@ -19,7 +20,7 @@ class AdminService {
       if (user == null) throw 'Authentication failed';
 
       final isAdminUser = await isAdmin(user.id);
-      print(user.id);
+      print(generateShortId(user.id));
       if (!isAdminUser) {
         throw 'User is not an admin';
       }
@@ -42,7 +43,7 @@ Future<bool> isAdmin(String userId) async {
     developer.log('isAdmin response: $response', name: 'AdminService');
 
     if (response == null) {
-      developer.log('Admin not found for UUID: $userId', name: 'AdminService');
+      developer.log('Admin not found for UUID: ${generateShortId(userId)}', name: 'AdminService');
       return false;
     }
 

@@ -17,6 +17,7 @@ import 'package:stock_app/widgets/responsive_layout.dart';
 import 'package:stock_app/providers/provider_reset.dart';
 import 'package:stock_app/pages/admin/admin_service/tickets_service/tick_service.dart';
 import 'package:stock_app/providers/time_zone_provider.dart';
+import 'package:stock_app/utils/id_hash.dart';
 
 // Add Supabase service provider
 final supabaseServiceProvider = Provider<SupabaseService>((ref) {
@@ -348,7 +349,7 @@ class _ProfileSection extends ConsumerWidget {
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                   subtitle: Text(
-                    user?.id ?? 'N/A',
+                    generateShortId(user?.id ?? ''),
                     style: const TextStyle(fontSize: 16),
                   ),
                 ),

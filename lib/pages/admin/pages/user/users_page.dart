@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:stock_app/pages/admin/admin_service/user/user_provider.dart';
+import 'package:stock_app/utils/id_hash.dart';
 
 class UserFilter {
   bool showVerified = true;
@@ -564,7 +565,7 @@ class _UsersPageState extends ConsumerState<UsersPage> with SingleTickerProvider
                 Text('Account Information',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 12),
-                _buildDetailRow(context, label: 'User ID', value: user.id),
+                _buildDetailRow(context, label: 'User ID', value: generateShortId(user.id)),
                 _buildDetailRow(context, label: 'Registration Date', value: _formatDate(user.registrationDate)),
                 _buildDetailRow(context, label: 'Account Balance', value: '\$${(user.accountBalance ?? 0.0).toStringAsFixed(2)}'),
                 _buildDetailRow(context, label: 'Active Trades', value: (user.activeTrades ?? 0).toString()),

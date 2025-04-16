@@ -29,6 +29,7 @@ dependencies:
   flutter_pdfview: ^1.4.0
   image_picker: ^1.0.7
   shared_preferences: ^2.5.3
+  crypto: ^3.0.3
 
 dev_dependencies:
   flutter_test:
