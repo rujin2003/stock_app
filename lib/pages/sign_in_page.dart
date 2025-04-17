@@ -29,7 +29,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
 
  Future<void> _signIn() async {
     if (_formKey.currentState!.validate()) {
-      final success = await ref
+      await ref
           .read(authStateNotifierProvider.notifier)
           .signIn(_emailController.text, _passwordController.text);
           

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/symbol.dart';
 import '../models/trade.dart';
 import '../providers/trade_provider.dart';
+import '../providers/account_provider.dart';
 import '../widgets/responsive_layout.dart';
 
 class TradeButtons extends ConsumerStatefulWidget {
@@ -883,6 +884,30 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
 
     // Capture the ScaffoldMessengerState before any async operations
     final scaffoldMessenger = ScaffoldMessenger.of(context);
+
+    // Check account balance
+    try {
+      final accountBalance = await ref.read(accountServiceProvider).getAccountBalance();
+      final requiredMargin = (widget.currentPrice * form.volume) / form.leverage;
+      
+      if (accountBalance.balance <= 0 || accountBalance.balance < requiredMargin) {
+        scaffoldMessenger.showSnackBar(
+          SnackBar(
+            content: Text('Insufficient balance. Required margin: \$${requiredMargin.toStringAsFixed(2)}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    } catch (e) {
+      scaffoldMessenger.showSnackBar(
+        SnackBar(
+          content: Text('Error checking balance: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
 
     // Validate volume
     if (form.volume <= 0) {

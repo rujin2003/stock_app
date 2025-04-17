@@ -16,7 +16,7 @@ class LinkedAccount {
   factory LinkedAccount.fromUser(User user) {
     return LinkedAccount(
       id: user.id,
-      email: user.email ?? 'Unknown',
+      email: user.email ?? user.userMetadata?['email'] ?? 'Unknown',
       photoUrl: user.userMetadata?['avatar_url'],
     );
   }
