@@ -64,4 +64,7 @@ void _initializeApp() async {
   // Also refresh tokens on app start
   final authService = AuthService();
   await authService.refreshAllAccountTokens();
+
+  // Setup session change listener to keep refresh tokens updated
+  authService.setupSessionChangeListener();
 }

@@ -4,6 +4,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:stock_app/models/auth_state.dart';
 import 'package:stock_app/pages/admin/admin_service/ticket_provider.dart';
 import 'package:stock_app/providers/auth_provider.dart' show authProvider;
+import 'package:stock_app/providers/linked_accounts_provider.dart';
 import 'package:stock_app/providers/market_data_provider.dart';
 import 'package:stock_app/providers/market_watcher_provider.dart';
 import 'package:stock_app/providers/symbol_provider.dart';
@@ -76,6 +77,16 @@ class AuthStateNotifier extends _$AuthStateNotifier {
     try {
       // First sign out from the service
       await _authService.signOut();
+
+      // Invalidate market data providers
+      _invalidateMarketProviders(ref);
+
+      // Explicitly invalidate linked accounts provider
+      try {
+        ref.invalidate(linkedAccountsProvider);
+      } catch (e) {
+        // Ignore if provider doesn't exist
+      }
 
       // Update state to unauthenticated first
       state = const AuthState(status: AuthStatus.unauthenticated);

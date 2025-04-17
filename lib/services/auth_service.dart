@@ -47,11 +47,31 @@ class AuthService {
 
       // Save to linked accounts
       await _saveLinkedAccount(linkedAccount);
+
+      // Store credentials securely for future account recovery
+      await _storeCredentials(email, password);
     }
   }
 
   Future<void> signOut() async {
+    // Get the current user before signing out
+    final currentUser = getCurrentUser();
+    final currentUserId = currentUser?.id;
+
+    // Sign out from Supabase
     await _client.auth.signOut();
+
+    // If we had a user, remove them from linked accounts list
+    if (currentUserId != null) {
+      try {
+        await removeLinkedAccount(currentUserId);
+        developer.log('Removed logged out user from linked accounts',
+            name: 'AuthService');
+      } catch (e) {
+        developer.log('Error removing account during logout: $e',
+            name: 'AuthService');
+      }
+    }
   }
 
   Future<void> resetPassword({required String email}) async {
@@ -185,12 +205,30 @@ class AuthService {
     final prefs = await SharedPreferences.getInstance();
     final linkedAccounts = await getLinkedAccounts();
 
-    // Check if account already exists
-    final existingIndex = linkedAccounts.indexWhere((a) => a.id == account.id);
-    if (existingIndex >= 0) {
-      linkedAccounts[existingIndex] = account;
+    // Check if account already exists by id
+    final existingIdIndex =
+        linkedAccounts.indexWhere((a) => a.id == account.id);
+
+    // Also check for duplicate emails
+    final duplicateEmailIndex = linkedAccounts
+        .indexWhere((a) => a.email == account.email && a.id != account.id);
+
+    // If found a duplicate email but different id, remove it to prevent dropdown issues
+    if (duplicateEmailIndex >= 0) {
+      developer.log(
+          'Removing duplicate account with email ${account.email} but different ID',
+          name: 'AuthService');
+      linkedAccounts.removeAt(duplicateEmailIndex);
+    }
+
+    // Update or add the current account
+    if (existingIdIndex >= 0) {
+      linkedAccounts[existingIdIndex] = account;
+      developer.log('Updated existing account: ${account.email}',
+          name: 'AuthService');
     } else {
       linkedAccounts.add(account);
+      developer.log('Added new account: ${account.email}', name: 'AuthService');
     }
 
     // Save back to shared preferences
@@ -220,6 +258,9 @@ class AuthService {
       // This prevents "StreamController.close" errors
       await _cleanupConnections();
 
+      // Store the current user tokens before switching
+      await _updateCurrentUserRefreshToken();
+
       // Sign in with the new account
       final response = await _client.auth.signInWithPassword(
         email: email,
@@ -230,6 +271,9 @@ class AuthService {
       if (user != null) {
         developer.log('Account switched successfully', name: 'AuthService');
         developer.log('New User ID: ${user.id}', name: 'AuthService');
+
+        // Store credentials for future seamless switching
+        await _storeCredentials(email, password);
 
         // Add the user to linked accounts
         await addCurrentUserToLinkedAccounts();
@@ -256,6 +300,10 @@ class AuthService {
       // Clean up any existing WebSocket connections
       await _cleanupConnections();
 
+      // Store current user info for fallback
+      final currentUser = getCurrentUser();
+      final currentUserId = currentUser?.id;
+
       // Get all linked accounts
       final linkedAccounts = await getLinkedAccounts();
 
@@ -265,49 +313,177 @@ class AuthService {
         orElse: () => throw Exception('Account not found'),
       );
 
-      // Check if we have refresh token
-      if (account.refreshToken == null) {
-        // Try switching using another method - stored session persistence
-        final currentUser = getCurrentUser();
-        if (currentUser?.id == accountId) {
-          // Already signed in as this user
-          developer.log('Already signed in as requested account',
+      // Update current user's refresh token before switching
+      if (currentUserId != null) {
+        await _updateCurrentUserRefreshToken();
+      }
+
+      // Try to switch using refresh token
+      try {
+        if (account.refreshToken != null) {
+          await _client.auth.setSession(account.refreshToken!);
+
+          // Verify if we actually switched correctly
+          final newUser = getCurrentUser();
+          if (newUser?.id != accountId) {
+            throw Exception("Session set but user didn't change");
+          }
+
+          // Store the new session info to update tokens
+          final newSession = _client.auth.currentSession;
+          if (newSession != null) {
+            final updatedAccount = LinkedAccount(
+              id: account.id,
+              email: account.email,
+              photoUrl: account.photoUrl,
+              addedAt: account.addedAt,
+              refreshToken: newSession.refreshToken,
+              accessToken: newSession.accessToken,
+            );
+            await _saveLinkedAccount(updatedAccount);
+          }
+
+          developer.log('Account switched successfully via refresh token',
               name: 'AuthService');
           return;
         }
-
-        // If we don't have a refresh token, we need to sign out and sign in again
-        developer.log('No refresh token available for account switch',
-            name: 'AuthService');
-        throw Exception('No refresh token available for seamless switch');
+      } catch (e) {
+        developer.log('Refresh token switch failed: $e', name: 'AuthService');
+        // Continue to password-less fallback below
       }
 
-      // Use the stored refresh token
-      await _client.auth.setSession(account.refreshToken!);
+      // If we get here, the refresh token approach failed
+      // Try signing out and restoring the previous session
+      developer.log('Trying alternative account switch approach',
+          name: 'AuthService');
 
-      // Store the new session info to update tokens
-      final newSession = _client.auth.currentSession;
-      if (newSession != null) {
-        // Update the stored tokens for this account
-        final updatedAccount = LinkedAccount(
-          id: account.id,
-          email: account.email,
-          photoUrl: account.photoUrl,
-          addedAt: account.addedAt,
-          refreshToken: newSession.refreshToken,
-          accessToken: newSession.accessToken,
-        );
+      // Sign out completely
+      await _client.auth.signOut();
 
-        await _saveLinkedAccount(updatedAccount);
+      // Create a new session - requires that we've stored both PersistSessionKey and access token
+      try {
+        // If access token exists, try to recover the session using it
+        if (account.accessToken != null) {
+          developer.log('Attempting to sign in with existing credentials',
+              name: 'AuthService');
+
+          // Instead of recreating the session ourselves, use a full sign-in
+          try {
+            // Try to fetch stored credentials
+            final storedPassword = await _getStoredCredentials(account.email);
+
+            if (storedPassword != null) {
+              // We have stored credentials, use them
+              await _client.auth.signInWithPassword(
+                email: account.email,
+                password: storedPassword,
+              );
+
+              developer.log('Account switched via stored credentials',
+                  name: 'AuthService');
+              return;
+            }
+          } catch (credentialError) {
+            developer.log('Credential recovery failed: $credentialError',
+                name: 'AuthService');
+            // Continue to the next approach
+          }
+
+          // If we couldn't use stored credentials, try token-based auth as last resort
+          try {
+            // Try to force a session using the access token - this is a last resort
+            // and may not work in all cases
+            await _client.auth.recoverSession(account.accessToken!);
+
+            // Verify we have the right user
+            final newUser = getCurrentUser();
+            if (newUser?.id == accountId) {
+              developer.log('Account switched via token recovery',
+                  name: 'AuthService');
+              return;
+            }
+          } catch (e) {
+            developer.log('Token recovery failed: $e', name: 'AuthService');
+          }
+        }
+      } catch (e) {
+        developer.log('Session recovery failed: $e', name: 'AuthService');
       }
 
-      developer.log('Account switched successfully', name: 'AuthService');
-      developer.log('New User ID: ${account.id}', name: 'AuthService');
+      // If we reached here, both approaches failed
+      throw Exception(
+          'All account switching methods failed. Please sign in again.');
     } catch (error) {
       developer.log('Error during seamless account switch: $error',
           name: 'AuthService');
       rethrow;
     }
+  }
+
+  // Update this method to be more robust
+  Future<void> _updateCurrentUserRefreshToken() async {
+    final currentUser = getCurrentUser();
+    if (currentUser == null) {
+      developer.log('No current user to update token for', name: 'AuthService');
+      return;
+    }
+
+    final session = _client.auth.currentSession;
+    if (session == null) {
+      developer.log('No active session found', name: 'AuthService');
+      return;
+    }
+
+    if (session.refreshToken == null || session.refreshToken!.isEmpty) {
+      developer.log('No refresh token available in current session',
+          name: 'AuthService');
+      return;
+    }
+
+    // Get all linked accounts
+    final linkedAccounts = await getLinkedAccounts();
+
+    // Find current account and update its tokens
+    bool found = false;
+    final updatedAccounts = linkedAccounts.map((account) {
+      if (account.id == currentUser.id) {
+        found = true;
+        // Update tokens for current account
+        final updated = LinkedAccount(
+          id: account.id,
+          email: account.email,
+          photoUrl: account.photoUrl,
+          addedAt: account.addedAt,
+          refreshToken: session.refreshToken,
+          accessToken: session.accessToken,
+        );
+        developer.log('Updated tokens for account ${account.email}',
+            name: 'AuthService');
+        return updated;
+      }
+      return account;
+    }).toList();
+
+    // If current account is not in the linked accounts, add it
+    if (!found) {
+      final newAccount = LinkedAccount.fromUser(
+        currentUser,
+        refreshToken: session.refreshToken,
+        accessToken: session.accessToken,
+      );
+      updatedAccounts.add(newAccount);
+      developer.log('Added new account ${currentUser.email} to linked accounts',
+          name: 'AuthService');
+    }
+
+    // Save all updated accounts
+    final prefs = await SharedPreferences.getInstance();
+    final linkedAccountsJson =
+        updatedAccounts.map((account) => jsonEncode(account.toJson())).toList();
+
+    await prefs.setStringList(_linkedAccountsKey, linkedAccountsJson);
+    developer.log('Updated refresh token for current account before switching',
+        name: 'AuthService');
   }
 
   // Method to refresh tokens for all accounts
@@ -347,5 +523,50 @@ class AuthService {
     await prefs.setStringList(_linkedAccountsKey, linkedAccountsJson);
 
     developer.log('Refreshed tokens for current account', name: 'AuthService');
+  }
+
+  // Add listener for session changes to keep refresh tokens updated
+  void setupSessionChangeListener() {
+    _client.auth.onAuthStateChange.listen((event) {
+      if (event.session != null) {
+        // Update the refresh token for the current user when the session changes
+        refreshAllAccountTokens();
+      }
+    });
+  }
+
+  // Store credentials securely for account recovery
+  Future<void> _storeCredentials(String email, String password) async {
+    try {
+      // In a production app, you would use a secure storage solution like flutter_secure_storage
+      // For this implementation, we'll use shared_preferences with a simple encryption
+      final prefs = await SharedPreferences.getInstance();
+
+      // Simple encoding - in production use proper encryption
+      final encodedPassword = base64Encode(utf8.encode(password));
+      final key = 'auth_credentials_$email';
+
+      await prefs.setString(key, encodedPassword);
+      developer.log('Stored credentials for $email', name: 'AuthService');
+    } catch (e) {
+      developer.log('Error storing credentials: $e', name: 'AuthService');
+    }
+  }
+
+  // Get stored credentials
+  Future<String?> _getStoredCredentials(String email) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'auth_credentials_$email';
+      final encodedPassword = prefs.getString(key);
+
+      if (encodedPassword == null) return null;
+
+      // Decode the password
+      return utf8.decode(base64Decode(encodedPassword));
+    } catch (e) {
+      developer.log('Error retrieving credentials: $e', name: 'AuthService');
+      return null;
+    }
   }
 }

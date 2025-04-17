@@ -154,6 +154,9 @@ class AccountPage extends ConsumerWidget {
                             );
 
                             if (confirmed == true) {
+                              // Get current user email before logout for confirmation message
+                              final userEmail = ref.read(authProvider)?.email;
+
                               // Reset all providers first
                               ProviderReset.resetAllUserProviders(ref);
 
@@ -161,6 +164,19 @@ class AccountPage extends ConsumerWidget {
                               await ref
                                   .read(authStateNotifierProvider.notifier)
                                   .signOut();
+
+                              // Explicitly invalidate linked accounts provider
+                              ref.invalidate(linkedAccountsProvider);
+
+                              // Show confirmation if we had a user
+                              if (userEmail != null && context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Logged out from $userEmail'),
+                                    backgroundColor: Colors.blue,
+                                  ),
+                                );
+                              }
 
                               // Navigate to auth page after logout
                               if (context.mounted) {
@@ -256,7 +272,8 @@ class _ProfileSection extends ConsumerWidget {
                           ),
                           child: DropdownButtonHideUnderline(
                             child: DropdownButton<String>(
-                              value: user?.email,
+                              value:
+                                  _findSafeDropdownValue(user?.email, accounts),
                               isExpanded: true,
                               icon: const Icon(Icons.arrow_drop_down),
                               items: accounts.map((LinkedAccount account) {
@@ -289,7 +306,7 @@ class _ProfileSection extends ConsumerWidget {
                                 );
                               }).toList(),
                               onChanged: (value) {
-                                if (value != user?.email) {
+                                if (value != null && value != user?.email) {
                                   _handleAccountSwitch(
                                       context,
                                       ref,
@@ -850,6 +867,9 @@ class _ProfileSection extends ConsumerWidget {
         }
 
         if (context.mounted) {
+          // Force refresh providers to ensure UI is updated
+          _forceCriticalProvidersRefresh(ref);
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Switched to ${account.email}')),
           );
@@ -860,7 +880,26 @@ class _ProfileSection extends ConsumerWidget {
           Navigator.pop(context);
         }
 
-        // Show password prompt
+        // Special handling for refresh token errors
+        final errorMsg = e.toString().toLowerCase();
+        if (errorMsg.contains('refresh token not found') ||
+            errorMsg.contains('invalid refresh token')) {
+          // Show an informative message about the token issue
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Your login session has expired. Please enter your password to re-login.',
+                  style: TextStyle(color: Colors.white),
+                ),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 5),
+              ),
+            );
+          }
+        }
+
+        // Show password prompt as fallback for all errors
         _showPasswordPrompt(context, ref, account);
       }
     });
@@ -880,7 +919,10 @@ class _ProfileSection extends ConsumerWidget {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Please enter your password to switch to this account:'),
+            const Text(
+              'Please enter your password to switch to this account:',
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 16),
             TextField(
               controller: passwordController,
@@ -888,17 +930,30 @@ class _ProfileSection extends ConsumerWidget {
               decoration: const InputDecoration(
                 labelText: 'Password',
                 border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.lock_outline),
               ),
+              autofocus: true,
+              onSubmitted: (_) async {
+                // Submit when user presses enter/done
+                if (passwordController.text.isNotEmpty) {
+                  Navigator.pop(context);
+                  _performPasswordSwitch(
+                      context, ref, account, passwordController.text);
+                }
+              },
             ),
           ],
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              Navigator.pop(context);
+              accountSwitchNotifier.state = AccountSwitchState.idle;
+            },
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () async {
+            onPressed: () {
               if (passwordController.text.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Please enter your password')),
@@ -907,53 +962,92 @@ class _ProfileSection extends ConsumerWidget {
               }
 
               Navigator.pop(context);
-
-              // Show loading indicator
-              showDialog(
-                context: context,
-                barrierDismissible: false,
-                builder: (context) => const Center(
-                  child: CircularProgressIndicator(),
-                ),
-              );
-
-              try {
-                // Use the regular account switch with password
-                await authStateNotifier.switchAccount(
-                    account.email, passwordController.text);
-
-                // Close loading dialog
-                if (context.mounted && Navigator.canPop(context)) {
-                  Navigator.pop(context);
-                }
-
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Switched to ${account.email}')),
-                  );
-                }
-              } catch (e) {
-                // Close loading dialog
-                if (context.mounted && Navigator.canPop(context)) {
-                  Navigator.pop(context);
-                }
-
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to switch account: $e')),
-                  );
-                }
-              } finally {
-                if (context.mounted) {
-                  accountSwitchNotifier.state = AccountSwitchState.idle;
-                }
-              }
+              _performPasswordSwitch(
+                  context, ref, account, passwordController.text);
             },
             child: const Text('Switch'),
           ),
         ],
       ),
     );
+  }
+
+  // Extract the account switching logic to a separate method
+  void _performPasswordSwitch(BuildContext context, WidgetRef ref,
+      LinkedAccount account, String password) async {
+    final authStateNotifier = ref.read(authStateNotifierProvider.notifier);
+    final accountSwitchNotifier = ref.read(accountSwitchStateProvider.notifier);
+
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+
+    try {
+      // Use the regular account switch with password
+      await authStateNotifier.switchAccount(account.email, password);
+
+      // Close loading dialog
+      if (context.mounted && Navigator.canPop(context)) {
+        Navigator.pop(context);
+      }
+
+      if (context.mounted) {
+        // Force refresh providers
+        _forceCriticalProvidersRefresh(ref);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Switched to ${account.email}'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      // Close loading dialog
+      if (context.mounted && Navigator.canPop(context)) {
+        Navigator.pop(context);
+      }
+
+      if (context.mounted) {
+        // Show a more user-friendly error message
+        final errorMsg = e.toString();
+        String displayError = 'Failed to switch account';
+
+        if (errorMsg.contains('Invalid login')) {
+          displayError = 'Incorrect password. Please try again.';
+        } else if (errorMsg.contains('network')) {
+          displayError = 'Network error. Please check your connection.';
+        } else {
+          displayError = 'Error: ${errorMsg.split(':').last.trim()}';
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(displayError),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+
+        // If it was a password issue, show the prompt again
+        if (errorMsg.contains('Invalid login')) {
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (context.mounted) {
+              _showPasswordPrompt(context, ref, account);
+            }
+          });
+        }
+      }
+    } finally {
+      if (context.mounted) {
+        accountSwitchNotifier.state = AccountSwitchState.idle;
+      }
+    }
   }
 
   // Improve the add account method to properly refresh providers
@@ -975,8 +1069,10 @@ class _ProfileSection extends ConsumerWidget {
               decoration: const InputDecoration(
                 labelText: 'Email',
                 border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.email_outlined),
               ),
               keyboardType: TextInputType.emailAddress,
+              autofocus: true,
             ),
             const SizedBox(height: 16),
             TextField(
@@ -985,108 +1081,138 @@ class _ProfileSection extends ConsumerWidget {
               decoration: const InputDecoration(
                 labelText: 'Password',
                 border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.lock_outline),
               ),
+              onSubmitted: (_) {
+                if (emailController.text.isNotEmpty &&
+                    passwordController.text.isNotEmpty) {
+                  Navigator.pop(context);
+                  _performAddAccount(context, ref, emailController.text,
+                      passwordController.text);
+                }
+              },
             ),
           ],
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              Navigator.pop(context);
+              accountSwitchNotifier.state = AccountSwitchState.idle;
+            },
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () async {
-              if (emailController.text.isEmpty ||
-                  passwordController.text.isEmpty) {
+            onPressed: () {
+              if (emailController.text.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Please fill all fields')),
+                  const SnackBar(content: Text('Please enter your email')),
+                );
+                return;
+              }
+              if (passwordController.text.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please enter your password')),
                 );
                 return;
               }
 
               Navigator.pop(context);
-
-              // Show loading indicator
-              showDialog(
-                context: context,
-                barrierDismissible: false,
-                builder: (context) => WillPopScope(
-                  onWillPop: () async => false,
-                  child: const Center(
-                    child: CircularProgressIndicator(),
-                  ),
-                ),
-              );
-
-              // Set switching state
-              accountSwitchNotifier.state = AccountSwitchState.switching;
-
-              try {
-                // First invalidate market data providers to close WebSockets
-                ref.invalidate(marketWatcherServiceProvider);
-
-                // Wait a moment for connections to close
-                await Future.delayed(const Duration(milliseconds: 500));
-
-                // Sign in with new account
-                await authStateNotifier.signIn(
-                    emailController.text, passwordController.text);
-
-                // Force reset all providers
-                ProviderReset.resetAllUserProviders(ref);
-
-                // Close loading dialog
-                if (context.mounted && Navigator.canPop(context)) {
-                  Navigator.pop(context);
-                }
-
-                if (context.mounted) {
-                  // Force refresh of key providers
-                  ref.invalidate(linkedAccountsProvider);
-                  ref.invalidate(authProvider);
-                  ref.invalidate(userTicketsProvider);
-                  ref.invalidate(accountBalanceProvider);
-                  ref.invalidate(tradesProvider);
-
-                  // Show success message
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                        content: Text('Added account ${emailController.text}')),
-                  );
-
-                  // Force rebuild the account page
-                  if (context.mounted) {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const AccountPage(),
-                      ),
-                    );
-                  }
-                }
-              } catch (e) {
-                // Close loading dialog
-                if (context.mounted && Navigator.canPop(context)) {
-                  Navigator.pop(context);
-                }
-
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to add account: $e')),
-                  );
-                }
-              } finally {
-                // Reset account switch state
-                if (context.mounted) {
-                  accountSwitchNotifier.state = AccountSwitchState.idle;
-                }
-              }
+              _performAddAccount(
+                  context, ref, emailController.text, passwordController.text);
             },
             child: const Text('Add'),
           ),
         ],
       ),
     );
+  }
+
+  // Extract account adding logic to a separate method
+  void _performAddAccount(BuildContext context, WidgetRef ref, String email,
+      String password) async {
+    final authStateNotifier = ref.read(authStateNotifierProvider.notifier);
+    final accountSwitchNotifier = ref.read(accountSwitchStateProvider.notifier);
+    final authService = AuthService();
+
+    // Set switching state
+    accountSwitchNotifier.state = AccountSwitchState.switching;
+
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+
+    try {
+      // Check if we need to store the current user's tokens first
+      await authService.addCurrentUserToLinkedAccounts();
+
+      // Switch to the new account
+      await authStateNotifier.switchAccount(email, password);
+
+      // Close loading dialog
+      if (context.mounted && Navigator.canPop(context)) {
+        Navigator.pop(context);
+      }
+
+      if (context.mounted) {
+        // Force refresh of key providers
+        _forceCriticalProvidersRefresh(ref);
+
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Added account $email'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      // Close loading dialog
+      if (context.mounted && Navigator.canPop(context)) {
+        Navigator.pop(context);
+      }
+
+      if (context.mounted) {
+        // Show a more user-friendly error message
+        final errorMsg = e.toString();
+        String displayError = 'Failed to add account';
+
+        if (errorMsg.contains('Invalid login')) {
+          displayError = 'Invalid email or password. Please try again.';
+        } else if (errorMsg.contains('network')) {
+          displayError = 'Network error. Please check your connection.';
+        } else {
+          displayError = 'Error: ${errorMsg.split(':').last.trim()}';
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(displayError),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+
+        // If it was an authentication issue, show the dialog again
+        if (errorMsg.contains('Invalid login')) {
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (context.mounted) {
+              _showAddAccountDialog(context, ref);
+            }
+          });
+        }
+      }
+    } finally {
+      // Reset account switch state
+      if (context.mounted) {
+        accountSwitchNotifier.state = AccountSwitchState.idle;
+      }
+    }
   }
 
   // Add this method to call after account operations
@@ -1102,5 +1228,23 @@ class _ProfileSection extends ConsumerWidget {
     Future.delayed(const Duration(milliseconds: 500), () {
       ref.invalidate(marketWatcherServiceProvider);
     });
+  }
+
+  // Helper method to find a safe dropdown value
+  String? _findSafeDropdownValue(
+      String? currentEmail, List<LinkedAccount> accounts) {
+    // If current email is null, return the first account's email if available
+    if (currentEmail == null) {
+      return accounts.isNotEmpty ? accounts.first.email : null;
+    }
+
+    // Check if the current email exists in the accounts list
+    final accountExists =
+        accounts.any((account) => account.email == currentEmail);
+
+    // If the email exists, return it; otherwise return the first account's email
+    return accountExists
+        ? currentEmail
+        : (accounts.isNotEmpty ? accounts.first.email : null);
   }
 }
