@@ -5,19 +5,26 @@ class LinkedAccount {
   final String email;
   final String? photoUrl;
   final DateTime addedAt;
+  final String? refreshToken;
+  final String? accessToken;
 
   LinkedAccount({
     required this.id,
     required this.email,
     this.photoUrl,
+    this.refreshToken,
+    this.accessToken,
     DateTime? addedAt,
   }) : addedAt = addedAt ?? DateTime.now();
 
-  factory LinkedAccount.fromUser(User user) {
+  factory LinkedAccount.fromUser(User user,
+      {String? refreshToken, String? accessToken}) {
     return LinkedAccount(
       id: user.id,
       email: user.email ?? user.userMetadata?['email'] ?? 'Unknown',
       photoUrl: user.userMetadata?['avatar_url'],
+      refreshToken: refreshToken,
+      accessToken: accessToken,
     );
   }
 
@@ -27,6 +34,8 @@ class LinkedAccount {
       'email': email,
       'photoUrl': photoUrl,
       'addedAt': addedAt.toIso8601String(),
+      'refreshToken': refreshToken,
+      'accessToken': accessToken,
     };
   }
 
@@ -36,6 +45,8 @@ class LinkedAccount {
       email: json['email'],
       photoUrl: json['photoUrl'],
       addedAt: DateTime.parse(json['addedAt']),
+      refreshToken: json['refreshToken'],
+      accessToken: json['accessToken'],
     );
   }
 }

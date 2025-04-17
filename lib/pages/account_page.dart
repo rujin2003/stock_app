@@ -290,7 +290,7 @@ class _ProfileSection extends ConsumerWidget {
                               }).toList(),
                               onChanged: (value) {
                                 if (value != user?.email) {
-                                  _showSwitchAccountDialog(
+                                  _handleAccountSwitch(
                                       context,
                                       ref,
                                       accounts
@@ -814,81 +814,11 @@ class _ProfileSection extends ConsumerWidget {
     );
   }
 
-  // Method to show account switching dialog
-  void _showSwitchAccountDialog(
+  // Update the handler method to include fallback
+  void _handleAccountSwitch(
       BuildContext context, WidgetRef ref, LinkedAccount account) {
-    final passwordController = TextEditingController();
     final authStateNotifier = ref.read(authStateNotifierProvider.notifier);
     final accountSwitchNotifier = ref.read(accountSwitchStateProvider.notifier);
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Switch to ${account.email}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Enter your password to continue:'),
-            const SizedBox(height: 16),
-            TextField(
-              controller: passwordController,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Password',
-                border: OutlineInputBorder(),
-              ),
-              onSubmitted: (_) => _performAccountSwitch(
-                context,
-                ref,
-                account,
-                passwordController.text,
-                authStateNotifier,
-                accountSwitchNotifier,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => _performAccountSwitch(
-              context,
-              ref,
-              account,
-              passwordController.text,
-              authStateNotifier,
-              accountSwitchNotifier,
-            ),
-            child: const Text('Switch'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _performAccountSwitch(
-    BuildContext context,
-    WidgetRef ref,
-    LinkedAccount account,
-    String password,
-    AuthStateNotifier authStateNotifier,
-    StateController<AccountSwitchState> accountSwitchNotifier,
-  ) async {
-    if (password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter your password')),
-      );
-      return;
-    }
-
-    Navigator.pop(context);
-
-    // Clean up WebSocket connections first
-    ref.invalidate(marketWatcherServiceProvider);
 
     // Show a loading indicator overlay
     showDialog(
@@ -905,60 +835,131 @@ class _ProfileSection extends ConsumerWidget {
     // Set switching state
     accountSwitchNotifier.state = AccountSwitchState.switching;
 
-    try {
-      // Give time for WebSocket connections to close properly
-      await Future.delayed(const Duration(milliseconds: 500));
+    // Clean up WebSocket connections first
+    ref.invalidate(marketWatcherServiceProvider);
 
-      // Perform the account switch
-      await authStateNotifier.switchAccount(account.email, password);
+    // Give time for WebSocket connections to close properly
+    Future.delayed(const Duration(milliseconds: 500), () async {
+      try {
+        // Try seamless switch first
+        await authStateNotifier.seamlessSwitchAccount(account.id);
 
-      // Close loading dialog
-      if (context.mounted && Navigator.canPop(context)) {
-        Navigator.pop(context);
+        // If successful, close loading dialog and show success message
+        if (context.mounted && Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Switched to ${account.email}')),
+          );
+        }
+      } catch (e) {
+        // If seamless switch fails, close loading dialog and show password prompt
+        if (context.mounted && Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+
+        // Show password prompt
+        _showPasswordPrompt(context, ref, account);
       }
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Switched to ${account.email}')),
-        );
-      }
-    } catch (e) {
-      // Close loading dialog
-      if (context.mounted && Navigator.canPop(context)) {
-        Navigator.pop(context);
-      }
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to switch account: $e')),
-        );
-      }
-    } finally {
-      if (context.mounted) {
-        accountSwitchNotifier.state = AccountSwitchState.idle;
-
-        // Force refresh providers after switching is complete
-        ref.invalidate(linkedAccountsProvider);
-        ref.invalidate(userTicketsProvider);
-        ref.invalidate(accountBalanceProvider);
-
-        // Allow a moment for UI to update before re-initializing market data
-        Future.delayed(const Duration(milliseconds: 500), () {
-          if (context.mounted) {
-            // Re-initialize market watcher provider
-            ref.refresh(marketWatcherServiceProvider);
-          }
-        });
-      }
-    }
+    });
   }
 
-  // Method to show add account dialog
+  // Add method to show password prompt as fallback
+  void _showPasswordPrompt(
+      BuildContext context, WidgetRef ref, LinkedAccount account) {
+    final passwordController = TextEditingController();
+    final authStateNotifier = ref.read(authStateNotifierProvider.notifier);
+    final accountSwitchNotifier = ref.read(accountSwitchStateProvider.notifier);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Switch to ${account.email}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Please enter your password to switch to this account:'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: passwordController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Password',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (passwordController.text.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please enter your password')),
+                );
+                return;
+              }
+
+              Navigator.pop(context);
+
+              // Show loading indicator
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (context) => const Center(
+                  child: CircularProgressIndicator(),
+                ),
+              );
+
+              try {
+                // Use the regular account switch with password
+                await authStateNotifier.switchAccount(
+                    account.email, passwordController.text);
+
+                // Close loading dialog
+                if (context.mounted && Navigator.canPop(context)) {
+                  Navigator.pop(context);
+                }
+
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Switched to ${account.email}')),
+                  );
+                }
+              } catch (e) {
+                // Close loading dialog
+                if (context.mounted && Navigator.canPop(context)) {
+                  Navigator.pop(context);
+                }
+
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to switch account: $e')),
+                  );
+                }
+              } finally {
+                if (context.mounted) {
+                  accountSwitchNotifier.state = AccountSwitchState.idle;
+                }
+              }
+            },
+            child: const Text('Switch'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Improve the add account method to properly refresh providers
   void _showAddAccountDialog(BuildContext context, WidgetRef ref) {
     final emailController = TextEditingController();
     final passwordController = TextEditingController();
-
-    // Store a reference to the notifier before any async operations
     final authStateNotifier = ref.read(authStateNotifierProvider.notifier);
     final accountSwitchNotifier = ref.read(accountSwitchStateProvider.notifier);
 
@@ -1005,36 +1006,77 @@ class _ProfileSection extends ConsumerWidget {
 
               Navigator.pop(context);
 
+              // Show loading indicator
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (context) => WillPopScope(
+                  onWillPop: () async => false,
+                  child: const Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                ),
+              );
+
               // Set switching state
               accountSwitchNotifier.state = AccountSwitchState.switching;
 
               try {
+                // First invalidate market data providers to close WebSockets
+                ref.invalidate(marketWatcherServiceProvider);
+
+                // Wait a moment for connections to close
+                await Future.delayed(const Duration(milliseconds: 500));
+
                 // Sign in with new account
                 await authStateNotifier.signIn(
                     emailController.text, passwordController.text);
 
-                // Use a Builder widget to obtain a fresh ref if needed in UI updates
-                if (context.mounted) {
-                  // Use fresh ref inside the mounted check
-                  Builder(builder: (context) {
-                    final freshRef = ProviderScope.containerOf(context)
-                        .refresh(linkedAccountsProvider);
-                    return const SizedBox.shrink();
-                  });
+                // Force reset all providers
+                ProviderReset.resetAllUserProviders(ref);
 
+                // Close loading dialog
+                if (context.mounted && Navigator.canPop(context)) {
+                  Navigator.pop(context);
+                }
+
+                if (context.mounted) {
+                  // Force refresh of key providers
+                  ref.invalidate(linkedAccountsProvider);
+                  ref.invalidate(authProvider);
+                  ref.invalidate(userTicketsProvider);
+                  ref.invalidate(accountBalanceProvider);
+                  ref.invalidate(tradesProvider);
+
+                  // Show success message
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                         content: Text('Added account ${emailController.text}')),
                   );
+
+                  // Force rebuild the account page
+                  if (context.mounted) {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const AccountPage(),
+                      ),
+                    );
+                  }
                 }
               } catch (e) {
+                // Close loading dialog
+                if (context.mounted && Navigator.canPop(context)) {
+                  Navigator.pop(context);
+                }
+
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Failed to add account: $e')),
                   );
                 }
               } finally {
-                // Only reset state if the widget is still mounted
+                // Reset account switch state
                 if (context.mounted) {
                   accountSwitchNotifier.state = AccountSwitchState.idle;
                 }
@@ -1047,5 +1089,18 @@ class _ProfileSection extends ConsumerWidget {
     );
   }
 
-  // Rest of your existing methods...
+  // Add this method to call after account operations
+  void _forceCriticalProvidersRefresh(WidgetRef ref) {
+    // Force immediate reload of critical providers
+    ref.invalidate(authProvider);
+    ref.invalidate(linkedAccountsProvider);
+    ref.invalidate(accountBalanceProvider);
+    ref.invalidate(userTicketsProvider);
+    ref.invalidate(tradesProvider);
+
+    // Wait a bit then refresh market data
+    Future.delayed(const Duration(milliseconds: 500), () {
+      ref.invalidate(marketWatcherServiceProvider);
+    });
+  }
 }

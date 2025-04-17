@@ -30,11 +30,23 @@ class AuthService {
     );
 
     final user = response.user;
-    if (user != null) {
+    final session = response.session;
+
+    if (user != null && session != null) {
       developer.log('User signed in successfully', name: 'AuthService');
       developer.log('User ID: ${user.id} (${user.id.runtimeType})',
           name: 'AuthService');
       developer.log('User email: ${user.email}', name: 'AuthService');
+
+      // Store refresh token for this account to enable seamless switching
+      final linkedAccount = LinkedAccount.fromUser(
+        user,
+        refreshToken: session.refreshToken,
+        accessToken: session.accessToken,
+      );
+
+      // Save to linked accounts
+      await _saveLinkedAccount(linkedAccount);
     }
   }
 
@@ -148,8 +160,24 @@ class AuthService {
     final currentUser = getCurrentUser();
     if (currentUser == null) return;
 
-    final linkedAccount = LinkedAccount.fromUser(currentUser);
+    // Get current session
+    final session = _client.auth.currentSession;
+
+    // Create linked account with tokens
+    final linkedAccount = LinkedAccount.fromUser(
+      currentUser,
+      refreshToken: session?.refreshToken,
+      accessToken: session?.accessToken,
+    );
+
+    // Save to linked accounts
     await _saveLinkedAccount(linkedAccount);
+
+    // If we don't have a refresh token, log a warning
+    if (session?.refreshToken == null) {
+      developer.log('Warning: No refresh token available for current user',
+          name: 'AuthService');
+    }
   }
 
   // Save a linked account
@@ -220,5 +248,104 @@ class AuthService {
     } catch (e) {
       developer.log('Error during connection cleanup: $e', name: 'AuthService');
     }
+  }
+
+  // Update the seamless account switching method
+  Future<void> seamlessSwitchAccount(String accountId) async {
+    try {
+      // Clean up any existing WebSocket connections
+      await _cleanupConnections();
+
+      // Get all linked accounts
+      final linkedAccounts = await getLinkedAccounts();
+
+      // Find the account with the specified ID
+      final account = linkedAccounts.firstWhere(
+        (acc) => acc.id == accountId,
+        orElse: () => throw Exception('Account not found'),
+      );
+
+      // Check if we have refresh token
+      if (account.refreshToken == null) {
+        // Try switching using another method - stored session persistence
+        final currentUser = getCurrentUser();
+        if (currentUser?.id == accountId) {
+          // Already signed in as this user
+          developer.log('Already signed in as requested account',
+              name: 'AuthService');
+          return;
+        }
+
+        // If we don't have a refresh token, we need to sign out and sign in again
+        developer.log('No refresh token available for account switch',
+            name: 'AuthService');
+        throw Exception('No refresh token available for seamless switch');
+      }
+
+      // Use the stored refresh token
+      await _client.auth.setSession(account.refreshToken!);
+
+      // Store the new session info to update tokens
+      final newSession = _client.auth.currentSession;
+      if (newSession != null) {
+        // Update the stored tokens for this account
+        final updatedAccount = LinkedAccount(
+          id: account.id,
+          email: account.email,
+          photoUrl: account.photoUrl,
+          addedAt: account.addedAt,
+          refreshToken: newSession.refreshToken,
+          accessToken: newSession.accessToken,
+        );
+
+        await _saveLinkedAccount(updatedAccount);
+      }
+
+      developer.log('Account switched successfully', name: 'AuthService');
+      developer.log('New User ID: ${account.id}', name: 'AuthService');
+    } catch (error) {
+      developer.log('Error during seamless account switch: $error',
+          name: 'AuthService');
+      rethrow;
+    }
+  }
+
+  // Method to refresh tokens for all accounts
+  Future<void> refreshAllAccountTokens() async {
+    // Get current user ID
+    final currentUserId = getCurrentUser()?.id;
+    if (currentUserId == null) return;
+
+    // Get current session
+    final session = _client.auth.currentSession;
+    if (session == null) return;
+
+    // Get all linked accounts
+    final linkedAccounts = await getLinkedAccounts();
+
+    // Find current account and update its tokens
+    final updatedAccounts = linkedAccounts.map((account) {
+      if (account.id == currentUserId) {
+        // Update tokens for current account
+        return LinkedAccount(
+          id: account.id,
+          email: account.email,
+          photoUrl: account.photoUrl,
+          addedAt: account.addedAt,
+          refreshToken: session.refreshToken,
+          accessToken: session.accessToken,
+        );
+      }
+      return account;
+    }).toList();
+
+    // Save all updated accounts
+    final prefs = await SharedPreferences.getInstance();
+    final linkedAccountsJson =
+        updatedAccounts.map((account) => jsonEncode(account.toJson())).toList();
+
+    await prefs.setStringList(_linkedAccountsKey, linkedAccountsJson);
+
+    developer.log('Refreshed tokens for current account', name: 'AuthService');
   }
 }

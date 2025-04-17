@@ -29,15 +29,23 @@ class AuthStateNotifier extends _$AuthStateNotifier {
   Future<void> signIn(String email, String password) async {
     state = state.copyWith(status: AuthStatus.authenticating);
     try {
+      // First, invalidate market data providers to close WebSockets
+      _invalidateMarketProviders(ref);
+
       // Ensure we're fully logged out before attempting login
       await _authService.signOut();
 
-      // Reset other providers after sign out
+      // Wait briefly for connections to close
+      await Future.delayed(const Duration(milliseconds: 300));
 
+      // Sign in
       await _authService.signIn(email: email, password: password);
 
       // Add the user to linked accounts
       await _authService.addCurrentUserToLinkedAccounts();
+
+      // Reset all providers to ensure fresh data
+      ProviderReset.resetAllUserProvidersFromProvider(ref);
 
       state = state.copyWith(status: AuthStatus.authenticated);
     } catch (e) {
@@ -155,6 +163,31 @@ class AuthStateNotifier extends _$AuthStateNotifier {
       ref.invalidate(symbolWatcherProvider);
     } catch (e) {
       // Ignore errors if providers don't exist
+    }
+  }
+
+  // Add this new method for seamless account switching
+  Future<void> seamlessSwitchAccount(String accountId) async {
+    state = state.copyWith(status: AuthStatus.authenticating);
+    try {
+      // First invalidate market data providers to close WebSockets properly
+      _invalidateMarketProviders(ref);
+
+      // Wait a moment for connections to close
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      // Now switch the account without requiring password
+      await _authService.seamlessSwitchAccount(accountId);
+
+      // Reset providers after successful account switch
+      ProviderReset.resetAllUserProvidersFromProvider(ref);
+
+      state = state.copyWith(status: AuthStatus.authenticated);
+    } catch (e) {
+      state = state.copyWith(
+        status: AuthStatus.error,
+        errorMessage: e.toString(),
+      );
     }
   }
 }
