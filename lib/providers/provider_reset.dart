@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stock_app/providers/auth_provider.dart';
 import 'package:stock_app/providers/auth_state_provider.dart';
 import 'package:stock_app/providers/linked_accounts_provider.dart';
+import 'package:stock_app/providers/market_watcher_provider.dart';
 import 'package:stock_app/providers/user_verification_provider.dart';
 import 'package:stock_app/providers/time_zone_provider.dart';
 import 'package:stock_app/providers/kyc_status_provider.dart';
@@ -38,55 +39,68 @@ class ProviderReset {
   /// Internal implementation that works with both WidgetRef and Ref
   static void _resetProviders(dynamic ref,
       {required bool calledFromAuthStateNotifier}) {
-    // Reset authentication providers - skip authStateNotifierProvider if called from itself
-    ref.invalidate(authProvider);
-    if (!calledFromAuthStateNotifier) {
-      // Only invalidate authStateNotifierProvider if not called from within itself
-      ref.invalidate(authStateNotifierProvider);
-    }
-
-    // Reset user data providers
-    ref.invalidate(linkedAccountsProvider);
-    ref.invalidate(userVerificationProvider);
-    ref.invalidate(kycStatusProvider);
-    ref.invalidate(accountBalanceProvider);
-    ref.invalidate(accountSwitchStateProvider);
-
-    // Reset transactions providers
-    ref.invalidate(accountTransactionsProvider);
-    ref.invalidate(pendingTransactionsProvider);
-    ref.invalidate(verifiedTransactionsProvider);
-    ref.invalidate(userVerifiedTransactionsProvider);
-
-    // Reset trade-related providers
-    ref.invalidate(tradesProvider);
-    ref.invalidate(openTradesProvider);
-    ref.invalidate(tradeFormProvider);
-
-    // Reset market data providers
-    ref.invalidate(watchlistProvider);
-    ref.invalidate(selectedSymbolProvider);
-    ref.invalidate(candlestickDataProvider);
-
-    // Reset user existence check
+    // First, carefully handle market data providers to prevent WebSocket issues
     try {
-      ref.invalidate(userExistsProvider);
+      // Invalidate market watcher provider first (WebSocket connections)
+      ref.invalidate(marketWatcherServiceProvider);
+
+      // Then invalidate related providers
+      ref.invalidate(marketDataProvider);
+      ref.invalidate(symbolWatcherProvider);
     } catch (_) {
-      // Ignore if the provider doesn't exist
+      // Ignore errors if providers don't exist
     }
 
-    // Reset ticket providers if they exist
-    try {
-      ref.invalidate(userTicketsProvider);
-    } catch (_) {
-      // Ignore if the provider doesn't exist
-    }
+    // Allow some time for WebSocket connections to close properly
+    Future.delayed(const Duration(milliseconds: 300), () {
+      try {
+        // Reset authentication providers
+        ref.invalidate(authProvider);
+        if (!calledFromAuthStateNotifier) {
+          ref.invalidate(authStateNotifierProvider);
+        }
 
-    // Reset admin state if it exists
-    try {
-      ref.invalidate(adminStateNotifierProvider);
-    } catch (_) {
-      // Ignore if the provider doesn't exist
-    }
+        // Reset user data providers
+        ref.invalidate(linkedAccountsProvider);
+        ref.invalidate(userVerificationProvider);
+        ref.invalidate(kycStatusProvider);
+        ref.invalidate(accountBalanceProvider);
+        ref.invalidate(accountSwitchStateProvider);
+
+        // Reset transactions providers
+        ref.invalidate(accountTransactionsProvider);
+        ref.invalidate(pendingTransactionsProvider);
+        ref.invalidate(verifiedTransactionsProvider);
+        ref.invalidate(userVerifiedTransactionsProvider);
+
+        // Reset trade-related providers
+        ref.invalidate(tradesProvider);
+        ref.invalidate(openTradesProvider);
+        ref.invalidate(tradeFormProvider);
+
+        // Reset user existence check
+        try {
+          ref.invalidate(userExistsProvider);
+        } catch (_) {
+          // Ignore if the provider doesn't exist
+        }
+
+        // Reset ticket providers if they exist
+        try {
+          ref.invalidate(userTicketsProvider);
+        } catch (_) {
+          // Ignore if the provider doesn't exist
+        }
+
+        // Reset admin state if it exists
+        try {
+          ref.invalidate(adminStateNotifierProvider);
+        } catch (_) {
+          // Ignore if the provider doesn't exist
+        }
+      } catch (_) {
+        // Ignore any errors during provider reset
+      }
+    });
   }
 }

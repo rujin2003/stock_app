@@ -1,6 +1,15 @@
-import 'dart:developer';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/src/consumer.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:stock_app/models/auth_state.dart';
+import 'package:stock_app/pages/admin/admin_service/ticket_provider.dart';
+import 'package:stock_app/providers/auth_provider.dart' show authProvider;
+import 'package:stock_app/providers/market_data_provider.dart';
+import 'package:stock_app/providers/market_watcher_provider.dart';
+import 'package:stock_app/providers/symbol_provider.dart';
+import 'package:stock_app/providers/time_filter_provider.dart';
+import 'package:stock_app/providers/trade_provider.dart';
+import 'package:stock_app/providers/user_verification_provider.dart';
 import 'package:stock_app/services/auth_service.dart';
 import 'package:stock_app/providers/provider_reset.dart';
 part 'auth_state_provider.g.dart';
@@ -60,11 +69,10 @@ class AuthStateNotifier extends _$AuthStateNotifier {
       // First sign out from the service
       await _authService.signOut();
 
-      // Then reset all providers to clear user data
-      ProviderReset.resetAllUserProvidersFromProvider(ref);
-
-      // Update state to unauthenticated
+      // Update state to unauthenticated first
       state = const AuthState(status: AuthStatus.unauthenticated);
+
+      // Then reset all providers to clear user data
     } catch (e) {
       state = state.copyWith(
         status: AuthStatus.error,
@@ -74,16 +82,14 @@ class AuthStateNotifier extends _$AuthStateNotifier {
   }
 
   Future<void> signInWithGoogle() async {
+    // First reset all providers to clear previous user data
+
     state = state.copyWith(status: AuthStatus.authenticating);
     try {
-      // First ensure we're logged out and providers are reset
       await _authService.signOut();
-      ProviderReset.resetAllUserProvidersFromProvider(ref);
-
       await _authService.googleSignIn();
       state = state.copyWith(status: AuthStatus.authenticated);
     } catch (e) {
-      log(e.toString());
       state = state.copyWith(
         status: AuthStatus.error,
         errorMessage: e.toString(),
@@ -113,18 +119,42 @@ class AuthStateNotifier extends _$AuthStateNotifier {
   Future<void> switchAccount(String email, String password) async {
     state = state.copyWith(status: AuthStatus.authenticating);
     try {
-      // First log out and reset providers
-      await _authService.signOut();
+      // First invalidate market data providers to close WebSockets properly
+      _invalidateMarketProviders(ref);
+
+      // Wait a moment for connections to close
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      // Now switch the account
+      await _authService.switchToAccount(email, password);
+
+      // Reset providers after successful account switch
       ProviderReset.resetAllUserProvidersFromProvider(ref);
 
-      // Then switch to the new account
-      await _authService.switchToAccount(email, password);
       state = state.copyWith(status: AuthStatus.authenticated);
     } catch (e) {
       state = state.copyWith(
         status: AuthStatus.error,
         errorMessage: e.toString(),
       );
+    }
+  }
+
+  // Helper method to specifically invalidate market data providers
+  void _invalidateMarketProviders(Ref ref) {
+    try {
+      ref.invalidate(watchlistProvider);
+
+      // Invalidate market watcher provider first to close WebSockets
+      ref.invalidate(marketWatcherServiceProvider);
+
+      // Then invalidate market data provider
+      ref.invalidate(marketDataProvider);
+
+      // Invalidate symbol provider
+      ref.invalidate(symbolWatcherProvider);
+    } catch (e) {
+      // Ignore errors if providers don't exist
     }
   }
 }

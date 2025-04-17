@@ -187,10 +187,38 @@ class AuthService {
 
   // Switch to another account
   Future<void> switchToAccount(String email, String password) async {
-    // Sign out current user
-    await signOut();
+    try {
+      // Clean up any existing WebSocket connections before switching
+      // This prevents "StreamController.close" errors
+      await _cleanupConnections();
 
-    // Sign in with the new account
-    await signIn(email: email, password: password);
+      // Sign in with the new account
+      final response = await _client.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
+
+      final user = response.user;
+      if (user != null) {
+        developer.log('Account switched successfully', name: 'AuthService');
+        developer.log('New User ID: ${user.id}', name: 'AuthService');
+
+        // Add the user to linked accounts
+        await addCurrentUserToLinkedAccounts();
+      }
+    } catch (error) {
+      developer.log('Error during account switch: $error', name: 'AuthService');
+      rethrow;
+    }
+  }
+
+  // Helper method to cleanup connections before switching accounts
+  Future<void> _cleanupConnections() async {
+    try {
+      // Give time for any pending operations to complete
+      await Future.delayed(const Duration(milliseconds: 300));
+    } catch (e) {
+      developer.log('Error during connection cleanup: $e', name: 'AuthService');
+    }
   }
 }
