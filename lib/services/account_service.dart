@@ -94,6 +94,22 @@ class AccountService {
         .eq('id', transaction.id)
         .single();
 
+    // Get the current balance after the transaction
+    final balanceResponse = await _supabase
+        .from('account_balances')
+        .select('balance')
+        .eq('user_id', userId)
+        .single();
+
+    // Update appusers table with the new balance
+    await _supabase
+        .from('appusers')
+        .update({
+          'account_balance': balanceResponse['balance'],
+          'updated_at': now.toIso8601String(),
+        })
+        .eq('user_id', userId);
+
     return Transaction.fromJson(response);
   }
 
@@ -155,6 +171,15 @@ class AccountService {
       'margin_level': marginLevel,
       'updated_at': DateTime.now().toIso8601String(),
     }).eq('user_id', userId);
+
+    // Update appusers table with the new balance
+    await _supabase
+        .from('appusers')
+        .update({
+          'account_balance': balance,
+          'updated_at': DateTime.now().toIso8601String(),
+        })
+        .eq('user_id', userId);
   }
 
   // Process profit/loss from a closed trade
@@ -209,6 +234,15 @@ class AccountService {
           'free_margin': newFreeMargin,
           'updated_at': DateTime.now().toIso8601String(),
         }).eq('user_id', userId);
+
+        // Update appusers table with the new balance
+        await _supabase
+            .from('appusers')
+            .update({
+              'account_balance': newBalance,
+              'updated_at': DateTime.now().toIso8601String(),
+            })
+            .eq('user_id', userId);
 
         log('Successfully updated account balance directly for trade ${trade.id}');
       } catch (fallbackError) {

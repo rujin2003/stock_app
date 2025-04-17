@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:developer';
 import 'dart:math' as math;
 
+import 'package:stock_app/models/account_balance.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/trade.dart';
 import '../services/account_service.dart';
@@ -34,6 +35,22 @@ class TradeService {
   }) async {
     final userId = _supabase.auth.currentUser!.id;
     final now = DateTime.now();
+
+    // Calculate platform fee ($15 per lot)
+    final platformFee = volume * 15.0;
+
+    // Calculate trade amount (margin required)
+    final tradeAmount = (entryPrice * volume) / leverage;
+
+    // Calculate total amount to deduct (trade amount + platform fee)
+    final totalAmountToDeduct = tradeAmount + platformFee;
+
+    // Create a transaction for the total amount (trade + fee)
+    await _accountService.createTransaction(
+      type: TransactionType.fee,
+      amount: totalAmountToDeduct,
+      description: 'Trade amount (${tradeAmount.toStringAsFixed(2)}) + Platform fee (${platformFee.toStringAsFixed(2)}) for ${volume} lot trade',
+    );
 
     // Determine trade status based on order type
     final status =

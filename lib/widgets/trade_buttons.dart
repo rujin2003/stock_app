@@ -889,11 +889,13 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
     try {
       final accountBalance = await ref.read(accountServiceProvider).getAccountBalance();
       final requiredMargin = (widget.currentPrice * form.volume) / form.leverage;
+      final platformFee = form.volume * 15.0; // $15 per lot
+      final totalDeduction = requiredMargin + platformFee;
       
-      if (accountBalance.balance <= 0 || accountBalance.balance < requiredMargin) {
+      if (accountBalance.balance <= 0 || accountBalance.balance < totalDeduction) {
         scaffoldMessenger.showSnackBar(
           SnackBar(
-            content: Text('Insufficient balance. Required margin: \$${requiredMargin.toStringAsFixed(2)}'),
+            content: Text('Insufficient balance. Required margin: \$${requiredMargin.toStringAsFixed(2)} + Platform fee: \$${platformFee.toStringAsFixed(2)} = Total: \$${totalDeduction.toStringAsFixed(2)}'),
             backgroundColor: Colors.red,
           ),
         );
