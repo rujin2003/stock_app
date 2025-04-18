@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "659587609515",
+    "project_id": "stockapp-7d14e",
+    "storage_bucket": "stockapp-7d14e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:659587609515:android:5c0ede1713482dc8e558ee",
+        "android_client_info": {
+          "package_name": "xyz.onlychan.stock_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAJM13VwxgsByoqWvGVEzo5FGuP-NwFclU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

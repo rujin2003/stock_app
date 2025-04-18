@@ -115,8 +115,17 @@ class AuthService {
         throw 'OAuth sign in failed';
       } else {
         // Mobile Google Sign In
+        final String? clientId = Platform.isIOS 
+            ? dotenv.env['IOS_CLIENT_ID']
+            : dotenv.env['ANDRIOD_CLIENT_ID'];
+      
+
+        if (clientId == null) {
+          throw 'Google Sign In failed: ${Platform.isIOS ? "iOS" : "Android"} client ID not found in environment variables';
+        }
+
         final GoogleSignIn googleSignIn = GoogleSignIn(
-          clientId: dotenv.env['IOS_CLIENT_ID'],
+          clientId: clientId,
         );
 
         final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
@@ -124,6 +133,10 @@ class AuthService {
 
         final GoogleSignInAuthentication googleAuth =
             await googleUser.authentication;
+
+        if (googleAuth.idToken == null) {
+          throw 'Google Sign In failed: No ID token received';
+        }
 
         final response = await _client.auth.signInWithIdToken(
           provider: OAuthProvider.google,
