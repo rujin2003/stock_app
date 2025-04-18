@@ -108,6 +108,174 @@ final filteredClosedTradesProvider = Provider<AsyncValue<List<Trade>>>((ref) {
   );
 });
 
+// Add a new provider to calculate time-filtered account balance
+final filteredAccountBalanceProvider =
+    Provider<AsyncValue<AccountBalance>>((ref) {
+  final accountBalanceAsync = ref.watch(accountBalanceProvider);
+  final filteredTransactionsAsync = ref.watch(filteredTransactionsProvider(
+      TransactionParams(
+          limit: 1000, offset: 0) // Large limit to get all transactions
+      ));
+  final filteredClosedTradesAsync = ref.watch(filteredClosedTradesProvider);
+  final timeFilter = ref.watch(timeFilterProvider);
+
+  // If base account balance is loading, return loading state
+  if (accountBalanceAsync is AsyncLoading) {
+    return const AsyncLoading();
+  }
+
+  // If base account balance has error, return the error
+  if (accountBalanceAsync is AsyncError) {
+    return AsyncError<AccountBalance>(accountBalanceAsync.error as Object,
+        accountBalanceAsync.stackTrace ?? StackTrace.current);
+  }
+
+  // Check if transactions or trades are loading
+  if (filteredTransactionsAsync is AsyncLoading ||
+      filteredClosedTradesAsync is AsyncLoading) {
+    return const AsyncLoading();
+  }
+
+  // Check if transactions or trades have errors
+  if (filteredTransactionsAsync is AsyncError) {
+    return AsyncError<AccountBalance>(filteredTransactionsAsync.error as Object,
+        filteredTransactionsAsync.stackTrace ?? StackTrace.current);
+  }
+
+  if (filteredClosedTradesAsync is AsyncError) {
+    return AsyncError<AccountBalance>(filteredClosedTradesAsync.error as Object,
+        filteredClosedTradesAsync.stackTrace ?? StackTrace.current);
+  }
+
+  // If all data is available, calculate filtered account balance
+  final baseAccountBalance = accountBalanceAsync.value!;
+  final transactions = filteredTransactionsAsync.value!;
+  final closedTrades = filteredClosedTradesAsync.value!;
+
+  // Get date range for the filtered period
+  final dateRange = timeFilter.getDateRange();
+
+  // For filtered balance calculation:
+  // 1. Start with current account balance
+  // 2. Add the sum of all filtered period's transactions that decreased the balance (withdrawals, fees, etc)
+  // 3. Subtract the sum of all filtered period's transactions that increased the balance (deposits, credits)
+  // 4. Add the sum of all filtered period profits/losses from closed trades
+
+  double balanceAdjustment = 0.0;
+
+  // Process transactions
+  for (final transaction in transactions) {
+    switch (transaction.type) {
+      case TransactionType.deposit:
+      case TransactionType.credit:
+      case TransactionType.profit:
+        // These increase balance, so subtract to get balance before them
+        balanceAdjustment -= transaction.amount;
+        break;
+      case TransactionType.withdrawal:
+      case TransactionType.fee:
+      case TransactionType.loss:
+        // These decrease balance, so add to get balance before them
+        balanceAdjustment += transaction.amount;
+        break;
+      case TransactionType.adjustment:
+        // For adjustments, need to check if it was positive or negative
+        if (transaction.amount >= 0) {
+          balanceAdjustment -= transaction.amount;
+        } else {
+          balanceAdjustment += transaction.amount.abs();
+        }
+        break;
+    }
+  }
+
+  // Process closed trades
+  for (final trade in closedTrades) {
+    if (trade.profit != null) {
+      // Subtract the profit from trades in this period
+      balanceAdjustment -= trade.profit!;
+    }
+  }
+
+  // Calculate new equity based on current equity, but adjusted for the filtered time period
+  double filteredBalance = baseAccountBalance.balance - balanceAdjustment;
+  double filteredEquity =
+      filteredBalance; // Base equity is same as filtered balance
+
+  // Create a new AccountBalance object with the adjusted values
+  return AsyncData(AccountBalance(
+    id: baseAccountBalance.id,
+    userId: baseAccountBalance.userId,
+    balance: filteredBalance,
+    equity: filteredEquity,
+    credit: baseAccountBalance.credit,
+    margin: baseAccountBalance.margin,
+    freeMargin:
+        filteredBalance - baseAccountBalance.margin, // Recalculate free margin
+    marginLevel: baseAccountBalance.margin > 0
+        ? (filteredEquity / baseAccountBalance.margin) * 100
+        : 0.0,
+    updatedAt: baseAccountBalance.updatedAt,
+  ));
+});
+
+// Provider for total gain/loss within the filtered period
+final filteredPeriodGainLossProvider = Provider<AsyncValue<double>>((ref) {
+  final filteredTransactionsAsync = ref.watch(
+      filteredTransactionsProvider(TransactionParams(limit: 1000, offset: 0)));
+  final filteredClosedTradesAsync = ref.watch(filteredClosedTradesProvider);
+
+  if (filteredTransactionsAsync is AsyncLoading ||
+      filteredClosedTradesAsync is AsyncLoading) {
+    return const AsyncLoading();
+  }
+
+  if (filteredTransactionsAsync is AsyncError) {
+    return AsyncError<double>(filteredTransactionsAsync.error as Object,
+        filteredTransactionsAsync.stackTrace ?? StackTrace.current);
+  }
+
+  if (filteredClosedTradesAsync is AsyncError) {
+    return AsyncError<double>(filteredClosedTradesAsync.error as Object,
+        filteredClosedTradesAsync.stackTrace ?? StackTrace.current);
+  }
+
+  final transactions = filteredTransactionsAsync.value!;
+  final closedTrades = filteredClosedTradesAsync.value!;
+
+  double totalGainLoss = 0.0;
+
+  // Calculate gain/loss from transactions (exclude deposits and withdrawals)
+  for (final transaction in transactions) {
+    switch (transaction.type) {
+      case TransactionType.profit:
+      case TransactionType.credit:
+        totalGainLoss += transaction.amount;
+        break;
+      case TransactionType.loss:
+      case TransactionType.fee:
+        totalGainLoss -= transaction.amount;
+        break;
+      case TransactionType.adjustment:
+        totalGainLoss += transaction.amount;
+        break;
+      // Ignore deposits and withdrawals as they don't affect profit/loss
+      case TransactionType.deposit:
+      case TransactionType.withdrawal:
+        break;
+    }
+  }
+
+  // Add profits/losses from closed trades
+  for (final trade in closedTrades) {
+    if (trade.profit != null) {
+      totalGainLoss += trade.profit!;
+    }
+  }
+
+  return AsyncData(totalGainLoss);
+});
+
 class HistoryPage extends ConsumerStatefulWidget {
   const HistoryPage({super.key});
 
@@ -204,9 +372,12 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isMobile = ResponsiveLayout.isMobile(context);
+    final timeFilter = ref.watch(timeFilterProvider);
 
-    // Get account balance
-    final accountBalanceAsync = ref.watch(accountBalanceProvider);
+    // Get filtered account balance using our new provider
+    final filteredAccountBalanceAsync =
+        ref.watch(filteredAccountBalanceProvider);
+    final filteredGainLossAsync = ref.watch(filteredPeriodGainLossProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -250,16 +421,43 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
       ),
       body: Column(
         children: [
-          // Account balance card
-          accountBalanceAsync.when(
-            data: (accountBalance) =>
-            
-                _buildAccountBalanceCard(context, accountBalance),
+          // Time filter information
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.filter_alt_outlined,
+                  size: 16,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Showing data for: ',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: theme.colorScheme.onSurface.withOpacity(0.7),
+                  ),
+                ),
+                Text(
+                  timeFilter.getDisplayName(),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Account balance card - using the filtered account balance
+          filteredAccountBalanceAsync.when(
+            data: (accountBalance) => _buildAccountBalanceCard(
+                context, accountBalance, filteredGainLossAsync),
             loading: () => const SizedBox(
               height: 100,
               child: Center(child: CircularProgressIndicator()),
             ),
-
             error: (error, _) => SizedBox(
               height: 100,
               child: Center(
@@ -390,12 +588,13 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
     );
   }
 
-  Widget _buildAccountBalanceCard(
-      BuildContext context, AccountBalance accountBalance) {
+  Widget _buildAccountBalanceCard(BuildContext context,
+      AccountBalance accountBalance, AsyncValue<double> filteredGainLossAsync) {
     final theme = Theme.of(context);
     final isMobile = ResponsiveLayout.isMobile(context);
 
-    // Get total P&L to display
+    // Get total P&L to display - now using both current open trades P&L
+    // and the filtered gain/loss for closed trades in the period
     final totalProfitLossAsync = ref.watch(totalProfitLossProvider);
 
     return Container(
@@ -404,10 +603,17 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: theme.colorScheme.outline.withOpacity(0.3),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: theme.shadowColor.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         children: [
@@ -439,7 +645,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                   ],
                 ),
               ),
-              // Equity - now dependent on P&L like in trade_page
+              // Equity
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -455,7 +661,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                     const SizedBox(height: 2),
                     totalProfitLossAsync.when(
                       data: (totalPL) {
-                        // Calculate equity as balance + P&L
+                        // Calculate equity as balance + P&L from open trades
                         final equity = accountBalance.balance + totalPL;
                         return Text(
                           '\$${equity.toStringAsFixed(2)}',
@@ -487,16 +693,59 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
 
           const SizedBox(height: 12),
 
-          // New row - P&L (like in trade_page.dart)
+          // New row - Period Performance
           Row(
             children: [
-              // P&L
+              // Filtered period gain/loss
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'PROFIT/LOSS',
+                      'PERIOD PERFORMANCE',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurface.withOpacity(0.7),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    filteredGainLossAsync.when(
+                      data: (gainLoss) {
+                        final isPositive = gainLoss >= 0;
+                        return Text(
+                          '${isPositive ? '+' : ''}\$${gainLoss.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: isPositive ? Colors.green : Colors.red,
+                          ),
+                        );
+                      },
+                      loading: () => const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      error: (_, __) => Text(
+                        'Error',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.red,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Open P&L
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'CURRENT OPEN P/L',
                       style: TextStyle(
                         fontSize: 11,
                         color: theme.colorScheme.onSurface.withOpacity(0.7),
@@ -532,8 +781,6 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                   ],
                 ),
               ),
-              // Blank space to match layout
-              Expanded(child: Container()),
             ],
           ),
 
