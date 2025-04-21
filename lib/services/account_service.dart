@@ -106,7 +106,6 @@ class AccountService {
         .from('appusers')
         .update({
           'account_balance': balanceResponse['balance'],
-          'updated_at': now.toIso8601String(),
         })
         .eq('user_id', userId);
 
@@ -177,7 +176,7 @@ class AccountService {
         .from('appusers')
         .update({
           'account_balance': balance,
-          'updated_at': DateTime.now().toIso8601String(),
+      
         })
         .eq('user_id', userId);
   }
@@ -240,7 +239,7 @@ class AccountService {
             .from('appusers')
             .update({
               'account_balance': newBalance,
-              'updated_at': DateTime.now().toIso8601String(),
+             
             })
             .eq('user_id', userId);
 

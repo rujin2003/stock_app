@@ -104,11 +104,25 @@ final totalProfitLossProvider = Provider<AsyncValue<double>>((ref) {
   );
 });
 
-class TradePage extends ConsumerWidget {
+class TradePage extends ConsumerStatefulWidget {
   const TradePage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<TradePage> createState() => _TradePageState();
+}
+
+class _TradePageState extends ConsumerState<TradePage> {
+  @override
+  void initState() {
+    super.initState();
+    // Refresh account balance when page is loaded
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.invalidate(accountBalanceProvider);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final filteredTradesAsync = ref.watch(filteredTradesProvider);
     final totalProfitLossAsync = ref.watch(totalProfitLossProvider);

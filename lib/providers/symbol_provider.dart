@@ -1,18 +1,18 @@
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
-import '../models/symbol.dart';
+import '../models/symbol.dart' as models;
 import '../services/supabase_service.dart';
 
 // Provider for all symbols fetched from API
 final allSymbolsProvider =
-    StateNotifierProvider<AllSymbolsNotifier, AsyncValue<List<Symbol>>>((ref) {
+    StateNotifierProvider<AllSymbolsNotifier, AsyncValue<List<models.Symbol>>>((ref) {
   return AllSymbolsNotifier(ref);
 });
 
 // Provider for filtered symbols based on search query
 final filteredSymbolsProvider =
-    StateProvider.family<List<Symbol>, SymbolFilter>((ref, filter) {
+    StateProvider.family<List<models.Symbol>, SymbolFilter>((ref, filter) {
   final allSymbolsAsync = ref.watch(allSymbolsProvider);
 
   return allSymbolsAsync.when(
@@ -33,7 +33,7 @@ final filteredSymbolsProvider =
   );
 });
 
-final watchlistProvider = FutureProvider<List<Symbol>>((ref) async {
+final watchlistProvider = FutureProvider<List<models.Symbol>>((ref) async {
   try {
     final supabaseService = SupabaseService();
     final result = await supabaseService.getWatchlist();
@@ -43,6 +43,10 @@ final watchlistProvider = FutureProvider<List<Symbol>>((ref) async {
     rethrow;
   }
 });
+
+// Add a state provider for managing the watchlist state
+final watchlistStateProvider = StateProvider<List<models.Symbol>>((ref) => []);
+
 class SymbolFilter {
   final String type;
   final String region;
@@ -55,7 +59,7 @@ class SymbolFilter {
   });
 }
 
-class AllSymbolsNotifier extends StateNotifier<AsyncValue<List<Symbol>>> {
+class AllSymbolsNotifier extends StateNotifier<AsyncValue<List<models.Symbol>>> {
   final Ref _ref;
 
   AllSymbolsNotifier(this._ref) : super(const AsyncValue.data([]));
@@ -82,7 +86,7 @@ class AllSymbolsNotifier extends StateNotifier<AsyncValue<List<Symbol>>> {
 
       if (response.statusCode == 200) {
         final symbols = (response.data['data'] as List)
-            .map((item) => Symbol.fromJson(item))
+            .map((item) => models.Symbol.fromJson(item))
             .toList();
 
         // Check which symbols are in the watchlist
@@ -102,7 +106,7 @@ class AllSymbolsNotifier extends StateNotifier<AsyncValue<List<Symbol>>> {
     }
   }
 
-  Future<void> toggleWatchlist(Symbol symbol) async {
+  Future<void> toggleWatchlist(models.Symbol symbol) async {
     try {
       if (symbol.isInWatchlist) {
         await _supabaseService.removeFromWatchlist(symbol.code);
@@ -112,7 +116,7 @@ class AllSymbolsNotifier extends StateNotifier<AsyncValue<List<Symbol>>> {
 
       state = AsyncValue.data(state.value!.map((s) {
         if (s.code == symbol.code) {
-          return Symbol(
+          return models.Symbol(
             code: s.code,
             name: s.name,
             type: s.type,

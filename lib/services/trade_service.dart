@@ -2,19 +2,24 @@ import 'dart:async';
 import 'dart:developer';
 import 'dart:math' as math;
 
-import 'package:stock_app/models/account_balance.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/trade.dart';
+import '../models/account_balance.dart';
 import '../services/account_service.dart';
+import '../providers/account_provider.dart';
+import '../providers/trade_provider.dart';
+import '../pages/trade_page.dart';
+import '../pages/history_page.dart' as history;
 
 class TradeService {
   final SupabaseClient _supabase = Supabase.instance.client;
   final math.Random _random = math.Random();
   final AccountService _accountService = AccountService();
 
-  
+  // Generate a 10-digit numeric ID
   String _generateNumericId() {
-   
+    // Start with 10 followed by 9 random digits to ensure 10 digits total
     return '10${_random.nextInt(900000000) + 100000000}';
   }
 
@@ -23,34 +28,42 @@ class TradeService {
     required String symbolCode,
     required String symbolName,
     required TradeType type,
+    required OrderType orderType,
     required double entryPrice,
-    required double volume,
-    required double leverage,
-    OrderType orderType = OrderType.market,
     double? limitPrice,
     double? stopPrice,
+    required double volume,
+    required double leverage,
     double? stopLoss,
     double? takeProfit,
     double? trailingStopLoss,
+    WidgetRef? ref,
   }) async {
     final userId = _supabase.auth.currentUser!.id;
     final now = DateTime.now();
 
+    // Get current balance
+    final balanceResponse = await _supabase
+        .from('account_balances')
+        .select('balance')
+        .eq('user_id', userId)
+        .single();
+
+    final currentBalance = balanceResponse['balance'].toDouble();
+
+    // Calculate required margin (simplified calculation)
+    final requiredMargin = (entryPrice * volume) / leverage;
+
     // Calculate platform fee ($15 per lot)
     final platformFee = volume * 15.0;
 
-    // Calculate trade amount (margin required)
-    final tradeAmount = (entryPrice * volume) / leverage;
+    // Total amount to be deducted
+    final totalDeduction = requiredMargin + platformFee;
 
-    // Calculate total amount to deduct (trade amount + platform fee)
-    final totalAmountToDeduct = tradeAmount + platformFee;
-
-    // Create a transaction for the total amount (trade + fee)
-    await _accountService.createTransaction(
-      type: TransactionType.fee,
-      amount: totalAmountToDeduct,
-      description: 'Trade amount (${tradeAmount.toStringAsFixed(2)}) + Platform fee (${platformFee.toStringAsFixed(2)}) for ${volume} lot trade',
-    );
+    // Check if user has enough balance
+    if (currentBalance < totalDeduction) {
+      throw Exception('Insufficient balance. Required: \$${totalDeduction.toStringAsFixed(2)}, Available: \$${currentBalance.toStringAsFixed(2)}');
+    }
 
     // Determine trade status based on order type
     final status =
@@ -75,13 +88,49 @@ class TradeService {
       userId: userId,
     );
 
-    final response =
-        await _supabase.from('trades').insert(trade.toJson()).select().single();
+    try {
+      // Insert the trade first
+      final response = await _supabase
+          .from('trades')
+          .insert(trade.toJson())
+          .select()
+          .single();
 
-    // Update account metrics after opening a trade
-    await _accountService.updateAccountMetrics();
+      // If trade is successful, deduct the amount from balance
+      if (response != null) {
+        // Update account balance
+        await _supabase
+            .from('account_balances')
+            .update({
+              'balance': currentBalance - totalDeduction,
+              'updated_at': now.toIso8601String(),
+            })
+            .eq('user_id', userId);
 
-    return Trade.fromJson(response);
+        // Update appusers table with the new balance
+        await _supabase
+            .from('appusers')
+            .update({
+              'account_balance': currentBalance - totalDeduction,
+            })
+            .eq('user_id', userId);
+
+        // Update account metrics
+        await _accountService.updateAccountMetrics();
+
+        // Reload states if ref is provided
+        if (ref != null) {
+          // Force reload of all states
+          await getTrades();
+          await _accountService.getAccountBalance();
+        }
+      }
+
+      return Trade.fromJson(response);
+    } catch (e) {
+      // If there's an error, rethrow it
+      throw Exception('Failed to create trade: $e');
+    }
   }
 
   // Get all trades for the current user
@@ -94,11 +143,7 @@ class TradeService {
         .eq('user_id', userId)
         .order('open_time', ascending: false);
 
-        print("this is my print statement");
-        print(response);
-
     return response.map((json) => Trade.fromJson(json)).toList();
-    
   }
 
   // Get a real-time stream of trades for the current user
@@ -107,7 +152,7 @@ class TradeService {
 
     // Create a StreamController to manage the stream
     final controller = StreamController<List<Trade>>.broadcast();
-   
+
     // Initial data load
     getTrades().then((trades) {
       if (!controller.isClosed) {
@@ -118,7 +163,6 @@ class TradeService {
         controller.addError(error);
       }
     });
-
 
     // Set up Supabase realtime subscription
     final subscription = _supabase

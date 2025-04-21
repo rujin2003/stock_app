@@ -303,6 +303,11 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
 
     // Add scroll listener for pagination
     _scrollController.addListener(_scrollListener);
+
+    // Refresh account balance when page is loaded
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.invalidate(accountBalanceProvider);
+    });
   }
 
   @override

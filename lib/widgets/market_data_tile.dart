@@ -77,6 +77,7 @@ class MarketDataTile extends ConsumerWidget {
     }
 
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () => _selectSymbol(context, ref),
       child: Card(
         margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),

@@ -1,3 +1,4 @@
+
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
@@ -113,16 +114,13 @@ class WebSocketService {
 
     if (_reconnectAttempts[marketType]! <= _maxReconnectAttempts) {
       int delay;
-      if (_reconnectAttempts[marketType]! <= 0) {
-        delay = 1000; // Base delay of 1 second
-      } else if (_reconnectAttempts[marketType]! >= 10) {
-        delay = 30000; // Cap at 30 seconds maximum
+      if (marketType == MarketType.forex || marketType == MarketType.indices) {
+        delay = 1000 * (_reconnectAttempts[marketType]! + 1);
       } else {
-        delay = 1000 *
-            (1 <<
-                (_reconnectAttempts[marketType]! -
-                    1)); // Safe exponential backoff
+        delay = 1000 * (1 << (_reconnectAttempts[marketType]! - 1));
       }
+
+      delay = delay > 30000 ? 30000 : delay;
 
       _reconnectTimers[marketType]?.cancel();
       _reconnectTimers[marketType] = Timer(Duration(milliseconds: delay), () {
@@ -198,8 +196,13 @@ class WebSocketService {
       _pendingSubscriptions[symbol] = Completer<void>();
     }
 
-    // Set up timeout for this subscription
-    _subscriptionTimeouts[symbol] = Timer(_subscriptionTimeout, () async {
+    // Set up timeout for this subscription with different timeouts based on market type
+    Duration timeout = _subscriptionTimeout;
+    if (marketType == MarketType.forex || marketType == MarketType.indices) {
+      timeout = const Duration(seconds: 15); // Longer timeout for forex and indices
+    }
+
+    _subscriptionTimeouts[symbol] = Timer(timeout, () async {
       debugPrint(
           'WebSocket subscription timeout for $symbol, falling back to Yahoo Finance');
 
@@ -210,6 +213,10 @@ class WebSocketService {
         if (_symbolStreamControllers.containsKey(symbol)) {
           _symbolStreamControllers[symbol]!.add(yahooData);
         }
+      } else {
+        // If Yahoo Finance fails, retry the WebSocket subscription
+        debugPrint('Yahoo Finance fallback failed for $symbol, retrying WebSocket subscription');
+        _subscribeToSymbol(symbol, marketType);
       }
     });
   }
@@ -332,16 +339,37 @@ class WebSocketService {
   }
 
   MarketType getMarketTypeForSymbol(String symbol) {
-    // Simple logic to determine market type based on symbol
-    if (symbol.contains('_') ||
-        symbol.endsWith('USDT') ||
-        symbol.endsWith('BTC')) {
-      return MarketType.crypto;
-    } else if (symbol.length == 6 && symbol.contains('/')) {
-      return MarketType.forex;
-    } else if (symbol.startsWith('^') || symbol.contains('INDEX')) {
+    // Convert to uppercase for consistent comparison
+    final upperSymbol = symbol.toUpperCase();
+    
+    // Check for indices first
+    if (upperSymbol.startsWith('^') || 
+        upperSymbol.contains('INDEX') ||
+        
+        upperSymbol == 'NASDAQ' ||
+        upperSymbol == 'S&P500' ||
+        upperSymbol == 'DOW' ||
+        upperSymbol == 'RUSSELL2000' ||
+        upperSymbol == 'FTSE100' ||
+        upperSymbol == 'DAX' ||
+        upperSymbol == 'NIKKEI225' ||
+        upperSymbol == 'HANG SENG' ||
+        upperSymbol == 'ASX200' ||
+        upperSymbol == 'CAC40') {
       return MarketType.indices;
-    } else {
+    }
+    // Then check for crypto
+    else if (upperSymbol.contains('_') ||
+        upperSymbol.endsWith('USDT') ||
+        upperSymbol.endsWith('BTC')) {
+      return MarketType.crypto;
+    }
+    // Then check for forex
+    else if (upperSymbol.length == 6 && !upperSymbol.contains('/')) {
+      return MarketType.forex;
+    }
+    // Default to stock
+    else {
       return MarketType.stock;
     }
   }

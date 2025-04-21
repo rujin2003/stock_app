@@ -136,7 +136,7 @@ class _SymbolSearchState extends ConsumerState<SymbolSearch> {
                     ),
                   ],
                 ),
-              ),
+            ),
             ),
           )
         : Scaffold(

@@ -152,7 +152,7 @@ class AuthService {
         return response;
       }
     } catch (error) {
-      developer.log('Error during Google Sign In: $error', name: 'AuthService');
+      developer.log('currently this feature is not available please login form email and password');
       rethrow;
     }
   }

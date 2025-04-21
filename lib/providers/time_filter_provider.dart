@@ -14,7 +14,7 @@ class TimeFilter {
   final DateTime? endDate;
 
   TimeFilter({
-    this.option = TimeFilterOption.lastMonth,
+    this.option = TimeFilterOption.today,
     this.startDate,
     this.endDate,
   });
