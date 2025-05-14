@@ -4,10 +4,12 @@ import 'dart:math' as math;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/account_balance.dart';
 import '../models/trade.dart';
+import '../services/websocket_service.dart';
 
 class AccountService {
   final SupabaseClient _supabase = Supabase.instance.client;
   final math.Random _random = math.Random();
+  final WebSocketService _webSocketService = WebSocketService();
 
   // Generate a 10-digit numeric ID
   String _generateNumericId() {
@@ -20,23 +22,55 @@ class AccountService {
   Future<AccountBalance> getAccountBalance() async {
     final userId = _supabase.auth.currentUser!.id;
 
-      print("is this function being called ");
-      print("print balances");
+    try {
+      // First try to get the existing balance
+      final response = await _supabase
+          .from('account_balances')
+          .select()
+          .eq('user_id', userId)
+          .maybeSingle();
 
-    final response = await _supabase
-        .from('account_balances')
-        .select()
-        .eq('user_id', userId)
-        .single();
-      
-    
-      print(response..toString());
+      // If we got a response, return it
+      if (response != null) {
+        return AccountBalance.fromJson(response);
+      }
 
+      // If no record exists, create a default balance record
+      final defaultBalance = {
+        'id': _generateNumericId(),
+        'user_id': userId,
+        'balance': 0.0,
+        'equity': 0.0,
+        'credit': 0.0,
+        'margin': 0.0,
+        'free_margin': 0.0,
+        'margin_level': 0.0,
+        'updated_at': DateTime.now().toIso8601String(),
+      };
 
+      // Insert the default balance
+      final newResponse = await _supabase
+          .from('account_balances')
+          .insert(defaultBalance)
+          .select()
+          .single();
 
-    return AccountBalance.fromJson(response);
+      return AccountBalance.fromJson(newResponse);
+    } catch (e) {
+      // If there's any other error, create a default balance object
+      return AccountBalance(
+        id: _generateNumericId(),
+        userId: userId,
+        balance: 0.0,
+        equity: 0.0,
+        credit: 0.0,
+        margin: 0.0,
+        freeMargin: 0.0,
+        marginLevel: 0.0,
+        updatedAt: DateTime.now(),
+      );
+    }
   }
-
 
   // Get transactions for the current user
   Future<List<Transaction>> getTransactions(
@@ -61,9 +95,21 @@ class AccountService {
     required double amount,
     String? description,
     String? relatedTradeId,
+    String? paymentProof,
+    String? accountInfoId,
+    String? adminAccountInfoId,
   }) async {
     final userId = _supabase.auth.currentUser!.id;
     final now = DateTime.now();
+
+    // Get current balance
+    final balanceResponse = await _supabase
+        .from('account_balances')
+        .select('balance')
+        .eq('user_id', userId)
+        .single();
+    
+    final currentBalance = (balanceResponse['balance'] as num).toDouble();
 
     // Create transaction object
     final transaction = Transaction(
@@ -74,6 +120,7 @@ class AccountService {
       description: description,
       relatedTradeId: relatedTradeId,
       createdAt: now,
+  
     );
 
     // Start a transaction to update both tables
@@ -85,6 +132,10 @@ class AccountService {
       'description': description,
       'related_trade_id': relatedTradeId,
       'created_at': now.toIso8601String(),
+      'payment_proof': paymentProof,
+      'user_current_balance': currentBalance,
+      'account_info_id': accountInfoId,
+      'admin_account_info_id': adminAccountInfoId,
     });
 
     // Get the updated transaction
@@ -95,7 +146,7 @@ class AccountService {
         .single();
 
     // Get the current balance after the transaction
-    final balanceResponse = await _supabase
+    final newBalanceResponse = await _supabase
         .from('account_balances')
         .select('balance')
         .eq('user_id', userId)
@@ -105,22 +156,44 @@ class AccountService {
     await _supabase
         .from('appusers')
         .update({
-          'account_balance': balanceResponse['balance'],
+          'account_balance': newBalanceResponse['balance'],
         })
         .eq('user_id', userId);
 
     return Transaction.fromJson(response);
   }
 
-  // Create an initial deposit for a new user
-  Future<Transaction> createInitialDeposit({
+  // Create a deposit transaction
+  Future<Transaction> createDeposit({
     required double amount,
-    String description = 'Initial deposit',
+    required String paymentProof,
+    required String accountInfoId,
+    required String adminAccountInfoId,
+    String description = 'Deposit',
   }) async {
     return createTransaction(
       type: TransactionType.deposit,
       amount: amount,
       description: description,
+      paymentProof: paymentProof,
+      accountInfoId: accountInfoId,
+      adminAccountInfoId: adminAccountInfoId,
+    );
+  }
+
+  // Create a withdrawal transaction
+  Future<Transaction> createWithdrawal({
+    required double amount,
+    required String accountInfoId,
+    required String adminAccountInfoId,
+    String description = 'Withdrawal',
+  }) async {
+    return createTransaction(
+      type: TransactionType.withdrawal,
+      amount: amount,
+      description: description,
+      accountInfoId: accountInfoId,
+      adminAccountInfoId: adminAccountInfoId,
     );
   }
 
@@ -147,36 +220,60 @@ class AccountService {
     final openTrades =
         tradesResponse.map((json) => Trade.fromJson(json)).toList();
 
-    // Calculate margin used by open trades
-    double margin = 0;
-    for (final trade in openTrades) {
-      // Simple margin calculation (in a real system, this would be more complex)
-      margin += (trade.entryPrice * trade.volume) / trade.leverage;
+    // Prepare update data
+    final Map<String, dynamic> updateData = {
+      'updated_at': DateTime.now().toIso8601String(),
+    };
+
+    if (openTrades.isEmpty) {
+      // When there are no open positions, reset all position-related metrics
+      updateData.addAll({
+        'equity': balance,
+        'margin': 0,
+        'free_margin': balance,
+        'margin_level': 0,
+      });
+    } else {
+      // Calculate metrics only when there are open positions
+      double margin = 0;
+      double floatingPL = 0;
+
+      // Calculate margin and floating P/L for each open trade
+      for (final trade in openTrades) {
+        // Calculate margin
+        margin += trade.calculateRequiredMargin();
+
+        // Get current price from WebSocket service
+        final marketData = _webSocketService.getLastMarketData(trade.symbolCode);
+        if (marketData != null) {
+          floatingPL += trade.calculateProfit(marketData.lastPrice);
+        }
+      }
+
+      // Calculate position-related metrics
+      final equity = balance + floatingPL;
+      final freeMargin = equity - margin;
+      final marginLevel = margin > 0 ? (equity / margin) * 100 : 0;
+
+      updateData.addAll({
+        'equity': equity,
+        'margin': margin,
+        'free_margin': freeMargin,
+        'margin_level': marginLevel,
+      });
     }
 
-    // Calculate equity (balance + floating P/L)
-    double floatingPL = 0;
-    // In a real system, you would calculate the floating P/L based on current prices
-
-    final equity = balance + floatingPL;
-    final freeMargin = equity - margin;
-    final marginLevel = margin > 0 ? (equity / margin) * 100 : 0;
-
-    // Update account balance
-    await _supabase.from('account_balances').update({
-      'equity': equity,
-      'margin': margin,
-      'free_margin': freeMargin,
-      'margin_level': marginLevel,
-      'updated_at': DateTime.now().toIso8601String(),
-    }).eq('user_id', userId);
+    // Update account balance with the calculated metrics
+    await _supabase
+        .from('account_balances')
+        .update(updateData)
+        .eq('user_id', userId);
 
     // Update appusers table with the new balance
     await _supabase
         .from('appusers')
         .update({
           'account_balance': balance,
-      
         })
         .eq('user_id', userId);
   }

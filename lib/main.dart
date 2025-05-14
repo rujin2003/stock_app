@@ -3,7 +3,6 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stock_app/router/router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:stock_app/services/websocket_service.dart';
 import 'package:stock_app/theme/app_theme_data.dart';
 import 'package:stock_app/services/auth_service.dart';
 import 'dart:async';
@@ -22,10 +21,6 @@ Future<void> main() async {
       eventsPerSecond: 10,
     ),
   );
-
-  // Initialize WebSocket service
-  final webSocketService = WebSocketService();
-  webSocketService.initialize();
 
   // Add a delay before starting the app to ensure proper initialization
   await Future.delayed(const Duration(seconds: 2));

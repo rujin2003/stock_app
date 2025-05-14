@@ -9,6 +9,8 @@ import '../providers/account_provider.dart';
 import '../providers/time_filter_provider.dart';
 import '../widgets/responsive_layout.dart';
 import '../widgets/time_filter_dropdown.dart';
+import 'dart:developer';
+
 
 // Provider for user equity (balance + unrealized P/L)
 final userEquityProvider = Provider<AsyncValue<double>>((ref) {
@@ -35,7 +37,14 @@ final filteredTradesProvider = Provider<AsyncValue<List<Trade>>>((ref) {
 
   return tradesAsync.when(
     data: (trades) {
+      log('filteredTradesProvider: Received ${trades.length} total trades');
+      final openTrades = trades.where((t) => t.status == TradeStatus.open).length;
+      final closedTrades = trades.where((t) => t.status == TradeStatus.closed).length;
+      final pendingTrades = trades.where((t) => t.status == TradeStatus.pending).length;
+      log('filteredTradesProvider: Open trades: $openTrades, Closed trades: $closedTrades, Pending trades: $pendingTrades');
+
       final dateRange = timeFilter.getDateRange();
+      log('filteredTradesProvider: Current time filter range: ${dateRange.start} to ${dateRange.end}');
 
       // Filter trades based on date range
       final filteredTrades = trades.where((trade) {
@@ -46,8 +55,16 @@ final filteredTradesProvider = Provider<AsyncValue<List<Trade>>>((ref) {
                 ? trade.closeTime!
                 : trade.openTime;
 
-        return dateRange.includes(dateToCheck);
+        final isInRange = dateRange.includes(dateToCheck);
+        if (!isInRange) {
+          log('filteredTradesProvider: Trade ${trade.id} filtered out - date $dateToCheck not in range');
+        }
+        return isInRange;
       }).toList();
+
+      log('filteredTradesProvider: After date filtering, ${filteredTrades.length} trades remain');
+      final filteredOpenTrades = filteredTrades.where((t) => t.status == TradeStatus.open).length;
+      log('filteredTradesProvider: After filtering, open trades: $filteredOpenTrades');
 
       return AsyncData(filteredTrades);
     },
@@ -56,51 +73,106 @@ final filteredTradesProvider = Provider<AsyncValue<List<Trade>>>((ref) {
   );
 });
 
-// Provider for total P/L of all open positions
+
+/// Provider for Total Unrealized P/L from open positions
 final totalProfitLossProvider = Provider<AsyncValue<double>>((ref) {
   final tradesAsync = ref.watch(tradesProvider);
 
   return tradesAsync.when(
     data: (trades) {
-      final openTrades =
-          trades.where((t) => t.status == TradeStatus.open).toList();
+      final openTrades = trades.where((t) => t.status == TradeStatus.open).toList();
 
-      // If no open trades, return 0
-      if (openTrades.isEmpty) {
-        return const AsyncData(0.0);
-      }
+      if (openTrades.isEmpty) return const AsyncData(0.0); 
 
-      // Create a list of market data providers for all open trades
-      final marketDataProviders = openTrades
-          .map((trade) => ref.watch(marketDataProvider(trade.symbolCode)))
-          .toList();
 
-      // Check if any market data is still loading or has error
-      final hasLoading = marketDataProviders.any((p) => p is AsyncLoading);
-      final hasError = marketDataProviders.any((p) => p is AsyncError);
-
-      if (hasLoading) {
-        return const AsyncLoading();
-      }
-
-      if (hasError) {
-        return AsyncError('Error loading market data', StackTrace.current);
-      }
-
-      // Calculate total P/L
       double total = 0.0;
-      for (int i = 0; i < openTrades.length; i++) {
-        final trade = openTrades[i];
-        final marketData = marketDataProviders[i].value;
-        if (marketData != null) {
-          total += trade.calculateProfit(marketData.lastPrice);
+      for (final trade in openTrades) {
+        final marketData = ref.watch(marketDataProvider(trade.symbolCode));
+        if (marketData is AsyncData && marketData.value != null) {
+          total += trade.calculateProfit(marketData.value!.lastPrice);
+        } else if (marketData is AsyncLoading) {
+          return const AsyncLoading();
+        } else if (marketData is AsyncError) {
+          return AsyncError('Market data error', StackTrace.current);
         }
       }
 
       return AsyncData(total);
     },
     loading: () => const AsyncLoading(),
-    error: (error, stack) => AsyncError(error, stack),
+    error: (error, stackTrace) => AsyncError(error, stackTrace),
+  );
+});
+
+/// Provider for Used Margin (calculated from open positions)
+final marginUsedProvider = Provider<AsyncValue<double>>((ref) {
+  final tradesAsync = ref.watch(tradesProvider);
+  log('marginUsedProvider: Watching tradesProvider');
+
+  return tradesAsync.when(
+    data: (trades) {
+      log('marginUsedProvider: Received trades data. Number of trades: ${trades.length}');
+      print("why isnt my trade printing");
+      print(trades.toString());
+
+      final openTrades = trades.where((t) => t.status == TradeStatus.open).toList();
+      log('marginUsedProvider: Number of open trades: ${openTrades.length}');
+      
+      if (openTrades.isEmpty) return const AsyncData(0.0);
+    
+      double usedMargin = openTrades.fold(0.0, (sum, t) => sum + t.leverage);
+      log('marginUsedProvider: Calculated used margin: $usedMargin');
+      return AsyncData(usedMargin);
+    },
+    loading: () {
+      log('marginUsedProvider: Loading trades data');
+      return const AsyncLoading();
+    },
+    error: (error, stackTrace) {
+      log('marginUsedProvider: Error loading trades: $error');
+      return AsyncError(error, stackTrace);
+    },
+  );
+});
+
+/// Provider for Free Margin = Balance - Used Margin (If no open trades, it's same as balance)
+final freeMarginProvider = Provider<AsyncValue<double>>((ref) {
+  final accountBalanceAsync = ref.watch(accountBalanceProvider);
+  final marginUsedAsync = ref.watch(marginUsedProvider);
+
+  return accountBalanceAsync.when(
+    data: (balance) {
+      return marginUsedAsync.when(
+        data: (usedMargin) => AsyncData(balance.balance - usedMargin),
+        loading: () => const AsyncLoading(),
+        error: (error, stackTrace) => AsyncError(error, stackTrace),
+      );
+    },
+    loading: () => const AsyncLoading(),
+    error: (error, stackTrace) => AsyncError(error, stackTrace),
+  );
+});
+
+/// Provider for Margin Level = Equity / Used Margin * 100 (If no margin used, returns 'N/A')
+final marginLevelProvider = Provider<AsyncValue<String>>((ref) {
+  final equityAsync = ref.watch(userEquityProvider);
+  final usedMarginAsync = ref.watch(marginUsedProvider);
+
+  return equityAsync.when(
+
+    data: (equity) {
+      return usedMarginAsync.when(
+        data: (usedMargin) {
+          if (usedMargin == 0) return const AsyncData('N/A');
+          final level = (equity / usedMargin) * 100;
+          return AsyncData('${level.toStringAsFixed(2)}%');
+        },
+        loading: () => const AsyncLoading(),
+        error: (error, stackTrace) => AsyncError(error, stackTrace),
+      );
+    },
+    loading: () => const AsyncLoading(),
+    error: (error, stackTrace) => AsyncError(error, stackTrace),
   );
 });
 
@@ -129,6 +201,8 @@ class _TradePageState extends ConsumerState<TradePage> {
     final accountBalanceAsync = ref.watch(accountBalanceProvider);
     final equityAsync = ref.watch(userEquityProvider);
 
+
+   
     return DefaultTabController(
       length: 2,
       child: Scaffold(

@@ -372,6 +372,24 @@ class _StockChartState extends ConsumerState<StockChart> {
         break;
     }
 
+    // --- Current Price Line Logic ---
+    double? currentPrice;
+    double? previousPrice;
+    Color priceLineColor = Colors.blue; // fallback
+    if (data.isNotEmpty) {
+      currentPrice = data.last.close;
+      if (data.length > 1) {
+        previousPrice = data[data.length - 2].close;
+        if (currentPrice > previousPrice) {
+          priceLineColor = Colors.green;
+        } else if (currentPrice < previousPrice) {
+          priceLineColor = Colors.red;
+        } else {
+          priceLineColor = Colors.grey;
+        }
+      }
+    }
+
     return SfCartesianChart(
       plotAreaBorderWidth: 0,
       margin: isMobile ? const EdgeInsets.all(8) : const EdgeInsets.all(16),
@@ -394,6 +412,30 @@ class _StockChartState extends ConsumerState<StockChart> {
         labelPosition: isMobile
             ? ChartDataLabelPosition.inside
             : ChartDataLabelPosition.outside,
+        plotBands: [
+          if (currentPrice != null)
+          PlotBand(
+              isVisible: true,
+              start: currentPrice,
+              end: currentPrice,
+              borderColor: priceLineColor,
+              borderWidth: 2,
+              text:'   ${currentPrice.toStringAsFixed(2)}  \n \n   ',
+              textStyle: TextStyle(
+
+             
+                backgroundColor: priceLineColor,
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: isMobile ? 10 : 12,
+                 height: 1.5,
+              ),
+              verticalTextAlignment: TextAnchor.start,
+              horizontalTextAlignment: TextAnchor.start,
+            ),
+          // Example alert line at 3325.00
+        
+        ],
       ),
       series: <CartesianSeries>[
         CandleSeries<CandlestickData, DateTime>(
@@ -431,7 +473,7 @@ class _StockChartState extends ConsumerState<StockChart> {
           color: theme.colorScheme.surface,
           textStyle: TextStyle(color: theme.colorScheme.onSurface),
           format:
-              'point.x: \${point.x}\nOpen: \${point.open}\nHigh: \${point.high}\nLow: \${point.low}\nClose: \${point.close}',
+              'Open: \$point.open\nHigh: \$point.high\nLow: \$point.low\nClose: \$point.close',
         ),
         tooltipDisplayMode: TrackballDisplayMode.groupAllPoints,
         lineType: TrackballLineType.vertical,

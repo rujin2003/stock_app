@@ -4,14 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../models/account_balance.dart';
 import '../models/trade.dart';
-import '../providers/account_provider.dart';
+import '../providers/account_provider.dart'; 
 import '../providers/trade_provider.dart';
 import '../providers/market_data_provider.dart';
 import '../providers/time_filter_provider.dart';
 import '../widgets/responsive_layout.dart';
 import '../widgets/time_filter_dropdown.dart';
-import '../pages/transactions_page.dart';
-import 'package:go_router/go_router.dart';
+import '../models/unified_transaction.dart'; 
+import '../providers/history_transactions_provider.dart'; 
 
 // Provider for total P/L of all open positions (copied from trade_page.dart)
 final totalProfitLossProvider = Provider<AsyncValue<double>>((ref) {
@@ -61,29 +61,6 @@ final totalProfitLossProvider = Provider<AsyncValue<double>>((ref) {
   );
 });
 
-// Provider for filtered transactions based on time filter
-final filteredTransactionsProvider =
-    Provider.family<AsyncValue<List<Transaction>>, TransactionParams>(
-        (ref, params) {
-  final transactionsAsync = ref.watch(transactionsProvider(params));
-  final timeFilter = ref.watch(timeFilterProvider);
-
-  return transactionsAsync.when(
-    data: (transactions) {
-      final dateRange = timeFilter.getDateRange();
-
-      // Filter transactions based on date range
-      final filteredTransactions = transactions.where((transaction) {
-        return dateRange.includes(transaction.createdAt);
-      }).toList();
-
-      return AsyncData(filteredTransactions);
-    },
-    loading: () => const AsyncLoading(),
-    error: (error, stack) => AsyncError(error, stack),
-  );
-});
-
 // Provider for filtered closed trades based on time filter
 final filteredClosedTradesProvider = Provider<AsyncValue<List<Trade>>>((ref) {
   final tradesAsync = ref.watch(tradesProvider);
@@ -108,174 +85,6 @@ final filteredClosedTradesProvider = Provider<AsyncValue<List<Trade>>>((ref) {
   );
 });
 
-// Add a new provider to calculate time-filtered account balance
-final filteredAccountBalanceProvider =
-    Provider<AsyncValue<AccountBalance>>((ref) {
-  final accountBalanceAsync = ref.watch(accountBalanceProvider);
-  final filteredTransactionsAsync = ref.watch(filteredTransactionsProvider(
-      TransactionParams(
-          limit: 1000, offset: 0) // Large limit to get all transactions
-      ));
-  final filteredClosedTradesAsync = ref.watch(filteredClosedTradesProvider);
-  final timeFilter = ref.watch(timeFilterProvider);
-
-  // If base account balance is loading, return loading state
-  if (accountBalanceAsync is AsyncLoading) {
-    return const AsyncLoading();
-  }
-
-  // If base account balance has error, return the error
-  if (accountBalanceAsync is AsyncError) {
-    return AsyncError<AccountBalance>(accountBalanceAsync.error as Object,
-        accountBalanceAsync.stackTrace ?? StackTrace.current);
-  }
-
-  // Check if transactions or trades are loading
-  if (filteredTransactionsAsync is AsyncLoading ||
-      filteredClosedTradesAsync is AsyncLoading) {
-    return const AsyncLoading();
-  }
-
-  // Check if transactions or trades have errors
-  if (filteredTransactionsAsync is AsyncError) {
-    return AsyncError<AccountBalance>(filteredTransactionsAsync.error as Object,
-        filteredTransactionsAsync.stackTrace ?? StackTrace.current);
-  }
-
-  if (filteredClosedTradesAsync is AsyncError) {
-    return AsyncError<AccountBalance>(filteredClosedTradesAsync.error as Object,
-        filteredClosedTradesAsync.stackTrace ?? StackTrace.current);
-  }
-
-  // If all data is available, calculate filtered account balance
-  final baseAccountBalance = accountBalanceAsync.value!;
-  final transactions = filteredTransactionsAsync.value!;
-  final closedTrades = filteredClosedTradesAsync.value!;
-
-  // Get date range for the filtered period
-  final dateRange = timeFilter.getDateRange();
-
-  // For filtered balance calculation:
-  // 1. Start with current account balance
-  // 2. Add the sum of all filtered period's transactions that decreased the balance (withdrawals, fees, etc)
-  // 3. Subtract the sum of all filtered period's transactions that increased the balance (deposits, credits)
-  // 4. Add the sum of all filtered period profits/losses from closed trades
-
-  double balanceAdjustment = 0.0;
-
-  // Process transactions
-  for (final transaction in transactions) {
-    switch (transaction.type) {
-      case TransactionType.deposit:
-      case TransactionType.credit:
-      case TransactionType.profit:
-        // These increase balance, so subtract to get balance before them
-        balanceAdjustment -= transaction.amount;
-        break;
-      case TransactionType.withdrawal:
-      case TransactionType.fee:
-      case TransactionType.loss:
-        // These decrease balance, so add to get balance before them
-        balanceAdjustment += transaction.amount;
-        break;
-      case TransactionType.adjustment:
-        // For adjustments, need to check if it was positive or negative
-        if (transaction.amount >= 0) {
-          balanceAdjustment -= transaction.amount;
-        } else {
-          balanceAdjustment += transaction.amount.abs();
-        }
-        break;
-    }
-  }
-
-  // Process closed trades
-  for (final trade in closedTrades) {
-    if (trade.profit != null) {
-      // Subtract the profit from trades in this period
-      balanceAdjustment -= trade.profit!;
-    }
-  }
-
-  // Calculate new equity based on current equity, but adjusted for the filtered time period
-  double filteredBalance = baseAccountBalance.balance - balanceAdjustment;
-  double filteredEquity =
-      filteredBalance; // Base equity is same as filtered balance
-
-  // Create a new AccountBalance object with the adjusted values
-  return AsyncData(AccountBalance(
-    id: baseAccountBalance.id,
-    userId: baseAccountBalance.userId,
-    balance: filteredBalance,
-    equity: filteredEquity,
-    credit: baseAccountBalance.credit,
-    margin: baseAccountBalance.margin,
-    freeMargin:
-        filteredBalance - baseAccountBalance.margin, // Recalculate free margin
-    marginLevel: baseAccountBalance.margin > 0
-        ? (filteredEquity / baseAccountBalance.margin) * 100
-        : 0.0,
-    updatedAt: baseAccountBalance.updatedAt,
-  ));
-});
-
-// Provider for total gain/loss within the filtered period
-final filteredPeriodGainLossProvider = Provider<AsyncValue<double>>((ref) {
-  final filteredTransactionsAsync = ref.watch(
-      filteredTransactionsProvider(TransactionParams(limit: 1000, offset: 0)));
-  final filteredClosedTradesAsync = ref.watch(filteredClosedTradesProvider);
-
-  if (filteredTransactionsAsync is AsyncLoading ||
-      filteredClosedTradesAsync is AsyncLoading) {
-    return const AsyncLoading();
-  }
-
-  if (filteredTransactionsAsync is AsyncError) {
-    return AsyncError<double>(filteredTransactionsAsync.error as Object,
-        filteredTransactionsAsync.stackTrace ?? StackTrace.current);
-  }
-
-  if (filteredClosedTradesAsync is AsyncError) {
-    return AsyncError<double>(filteredClosedTradesAsync.error as Object,
-        filteredClosedTradesAsync.stackTrace ?? StackTrace.current);
-  }
-
-  final transactions = filteredTransactionsAsync.value!;
-  final closedTrades = filteredClosedTradesAsync.value!;
-
-  double totalGainLoss = 0.0;
-
-  // Calculate gain/loss from transactions (exclude deposits and withdrawals)
-  for (final transaction in transactions) {
-    switch (transaction.type) {
-      case TransactionType.profit:
-      case TransactionType.credit:
-        totalGainLoss += transaction.amount;
-        break;
-      case TransactionType.loss:
-      case TransactionType.fee:
-        totalGainLoss -= transaction.amount;
-        break;
-      case TransactionType.adjustment:
-        totalGainLoss += transaction.amount;
-        break;
-      // Ignore deposits and withdrawals as they don't affect profit/loss
-      case TransactionType.deposit:
-      case TransactionType.withdrawal:
-        break;
-    }
-  }
-
-  // Add profits/losses from closed trades
-  for (final trade in closedTrades) {
-    if (trade.profit != null) {
-      totalGainLoss += trade.profit!;
-    }
-  }
-
-  return AsyncData(totalGainLoss);
-});
-
 class HistoryPage extends ConsumerStatefulWidget {
   const HistoryPage({super.key});
 
@@ -286,9 +95,7 @@ class HistoryPage extends ConsumerStatefulWidget {
 class _HistoryPageState extends ConsumerState<HistoryPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final _transactionParams = _TransactionParamsState();
   final ScrollController _scrollController = ScrollController();
-  bool _isLoadingMore = false;
 
   // Map to track expanded state of trade items
   final Map<int, bool> _expandedTrades = {};
@@ -300,14 +107,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-
-    // Add scroll listener for pagination
     _scrollController.addListener(_scrollListener);
-
-    // Refresh account balance when page is loaded
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.invalidate(accountBalanceProvider);
-    });
   }
 
   @override
@@ -319,57 +119,14 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
   }
 
   void _scrollListener() {
-    if (_scrollController.position.pixels >=
-            _scrollController.position.maxScrollExtent * 0.8 &&
-        !_isLoadingMore) {
-      _loadMoreTransactions();
-    }
-  }
-
-  Future<void> _loadMoreTransactions() async {
-    if (_tabController.index != 0 || _isLoadingMore) return;
-
-    setState(() {
-      _isLoadingMore = true;
-    });
-
-    try {
-      // Get current transactions
-      final transactionsAsync =
-          ref.read(filteredTransactionsProvider(TransactionParams(
-        limit: _transactionParams.limit,
-        offset: _transactionParams.offset,
-      )));
-
-      await transactionsAsync.when(
-        data: (currentTransactions) async {
-          // If we got fewer transactions than the limit, there are no more to load
-          if (currentTransactions.length < _transactionParams.limit) {
-            return;
-          }
-
-          // Calculate new offset for next page
-          final newOffset =
-              _transactionParams.offset + _transactionParams.limit;
-
-          // Update the params for next load
-          setState(() {
-            _transactionParams.offset = newOffset;
-          });
-
-          // Trigger the provider to load more with the new offset
-          ref.invalidate(transactionsProvider(TransactionParams(
-            limit: _transactionParams.limit,
-            offset: newOffset,
-          )));
-        },
-        loading: () => null,
-        error: (_, __) => null,
-      );
-    } finally {
-      setState(() {
-        _isLoadingMore = false;
-      });
+    if (_tabController.index == 0) { // Only act if on the Transactions tab
+      final historyState = ref.read(historyTransactionsProvider);
+      if (_scrollController.position.pixels >=
+              _scrollController.position.maxScrollExtent * 0.8 &&
+          !historyState.isLoadingMore &&
+          historyState.hasMore) {
+        ref.read(historyTransactionsProvider.notifier).fetchMoreTransactions();
+      }
     }
   }
 
@@ -377,12 +134,9 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isMobile = ResponsiveLayout.isMobile(context);
-    final timeFilter = ref.watch(timeFilterProvider);
 
-    // Get filtered account balance using our new provider
-    final filteredAccountBalanceAsync =
-        ref.watch(filteredAccountBalanceProvider);
-    final filteredGainLossAsync = ref.watch(filteredPeriodGainLossProvider);
+    // Get account balance
+    final accountBalanceAsync = ref.watch(accountBalanceProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -418,47 +172,12 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
           indicatorColor: theme.colorScheme.primary,
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          context.go('/transactions');
-        },
-        child: const Icon(Icons.add),
-      ),
       body: Column(
         children: [
-          // Time filter information
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.filter_alt_outlined,
-                  size: 16,
-                  color: theme.colorScheme.primary,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Showing data for: ',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: theme.colorScheme.onSurface.withOpacity(0.7),
-                  ),
-                ),
-                Text(
-                  timeFilter.getDisplayName(),
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Account balance card - using the filtered account balance
-          filteredAccountBalanceAsync.when(
-            data: (accountBalance) => _buildAccountBalanceCard(
-                context, accountBalance, filteredGainLossAsync),
+          // Account balance card
+          accountBalanceAsync.when(
+            data: (accountBalance) =>
+                _buildAccountBalanceCard(context, accountBalance),
             loading: () => const SizedBox(
               height: 100,
               child: Center(child: CircularProgressIndicator()),
@@ -572,6 +291,8 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                     backgroundColor: theme.colorScheme.primary,
                   ),
                 );
+                // Optionally, refresh the new history provider after a successful deposit
+                ref.read(historyTransactionsProvider.notifier).fetchInitialTransactions();
               } catch (e) {
                 // Show error message
                 scaffoldMessenger.showSnackBar(
@@ -593,13 +314,12 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
     );
   }
 
-  Widget _buildAccountBalanceCard(BuildContext context,
-      AccountBalance accountBalance, AsyncValue<double> filteredGainLossAsync) {
+  Widget _buildAccountBalanceCard(
+      BuildContext context, AccountBalance accountBalance) {
     final theme = Theme.of(context);
     final isMobile = ResponsiveLayout.isMobile(context);
 
-    // Get total P&L to display - now using both current open trades P&L
-    // and the filtered gain/loss for closed trades in the period
+    // Get total P&L to display
     final totalProfitLossAsync = ref.watch(totalProfitLossProvider);
 
     return Container(
@@ -608,17 +328,10 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(4),
         border: Border.all(
           color: theme.colorScheme.outline.withOpacity(0.3),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: theme.shadowColor.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
       child: Column(
         children: [
@@ -650,7 +363,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                   ],
                 ),
               ),
-              // Equity
+              // Equity - now dependent on P&L like in trade_page
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -666,7 +379,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                     const SizedBox(height: 2),
                     totalProfitLossAsync.when(
                       data: (totalPL) {
-                        // Calculate equity as balance + P&L from open trades
+                        // Calculate equity as balance + P&L
                         final equity = accountBalance.balance + totalPL;
                         return Text(
                           '\$${equity.toStringAsFixed(2)}',
@@ -698,59 +411,16 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
 
           const SizedBox(height: 12),
 
-          // New row - Period Performance
+          // New row - P&L (like in trade_page.dart)
           Row(
             children: [
-              // Filtered period gain/loss
+              // P&L
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'PERIOD PERFORMANCE',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: theme.colorScheme.onSurface.withOpacity(0.7),
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    filteredGainLossAsync.when(
-                      data: (gainLoss) {
-                        final isPositive = gainLoss >= 0;
-                        return Text(
-                          '${isPositive ? '+' : ''}\$${gainLoss.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: isPositive ? Colors.green : Colors.red,
-                          ),
-                        );
-                      },
-                      loading: () => const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      error: (_, __) => Text(
-                        'Error',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.red,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Open P&L
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'CURRENT OPEN P/L',
+                      'PROFIT/LOSS',
                       style: TextStyle(
                         fontSize: 11,
                         color: theme.colorScheme.onSurface.withOpacity(0.7),
@@ -786,6 +456,8 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                   ],
                 ),
               ),
+              // Blank space to match layout
+              Expanded(child: Container()),
             ],
           ),
 
@@ -958,226 +630,242 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
   }
 
   Widget _buildTransactionsTab(BuildContext context) {
-    final filteredTransactionsAsync =
-        ref.watch(filteredTransactionsProvider(TransactionParams(
-      limit: _transactionParams.limit,
-      offset: _transactionParams.offset,
-    )));
+    final theme = Theme.of(context);
+    final historyState = ref.watch(historyTransactionsProvider);
+    final transactions = historyState.transactions;
 
-    return filteredTransactionsAsync.when(
-      data: (transactions) {
-        if (transactions.isEmpty && _transactionParams.offset == 0) {
-          return _buildEmptyState(
-            context,
-            'No Transactions',
-            'Your account transactions will appear here',
-          );
-        }
+    if (historyState.isLoading && transactions.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-        return RefreshIndicator(
-          onRefresh: () async {
-            // Reset offset to 0 when refreshing
-            setState(() {
-              _transactionParams.offset = 0;
-            });
-            // Refresh the provider with reset parameters
-            ref.refresh(transactionsProvider(TransactionParams(
-              limit: _transactionParams.limit,
-              offset: 0,
-            )));
-            return Future.value();
-          },
+    if (historyState.error != null && transactions.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text('Failed to Load Transactions: ${historyState.error}', style: TextStyle(color: Colors.red)),
+            const SizedBox(height: 10),
+            ElevatedButton(
+              onPressed: () => ref.read(historyTransactionsProvider.notifier).retry(),
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (transactions.isEmpty && !historyState.isLoading && !historyState.hasMore) {
+        return _buildEmptyState(context, 'No Transactions', 'All your account and trade activities will appear here.');
+    }
+    
+    // If transactions are empty but it might still be loading more or has potential to load more, show loading or a less definitive empty state.
+    // This case is tricky. If transactions is empty, isLoading is false, but hasMore is true, it means the first fetch returned nothing but thinks there could be more.
+    // This usually shouldn't happen if the first fetch correctly sets hasMore to false if it gets nothing.
+    // For now, if transactions is empty and not loading, and error is null, assume "No Transactions" if hasMore is also false.
+
+    return Column(
+      children: [
+        Expanded(
           child: ListView.builder(
-            controller: _scrollController,
-            padding: const EdgeInsets.all(8),
-            itemCount: transactions.length + (_isLoadingMore ? 1 : 0),
+            controller: _scrollController, // Attach scroll controller here
+            itemCount: transactions.length + (historyState.isLoadingMore ? 1 : 0),
             itemBuilder: (context, index) {
-              if (index == transactions.length) {
-                return const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(8.0),
-                    child: CircularProgressIndicator(),
-                  ),
-                );
+              if (index == transactions.length && historyState.isLoadingMore) {
+                return const Center(child: Padding(
+                  padding: EdgeInsets.all(8.0),
+                  child: CircularProgressIndicator(),
+                ));
+              }
+              if (index >= transactions.length) { // Should not happen if itemCount is correct
+                  return const SizedBox.shrink(); 
               }
 
               final transaction = transactions[index];
-              return _buildTransactionItem(context, transaction);
+              final isExpanded = _expandedTransactions[transaction.id] ?? false;
+
+              IconData iconData;
+              Color iconColor;
+              String title;
+              String subtitle; // More detailed description or original type
+
+              if (transaction.source == TransactionSource.account) { // Corrected
+                bool isPositive = transaction.amount > 0;
+                iconData = isPositive ? Icons.account_balance_wallet_outlined : Icons.credit_card_off_outlined;
+                iconColor = isPositive ? Colors.green.shade600 : Colors.red.shade600;
+                title = transaction.displayType;
+                subtitle = transaction.originalTypeFromDb ?? transaction.description ?? '';
+              } else { // System transaction (source == TransactionSource.system)
+                switch (transaction.category) {
+                  case UnifiedTransactionCategory.profit:
+                    iconData = Icons.trending_up;
+                    iconColor = Colors.green.shade700;
+                    title = 'Trade Profit';
+                    subtitle = 'Related ID: ${transaction.relatedTradeId ?? "N/A"}';
+                    break;
+                  case UnifiedTransactionCategory.loss:
+                    iconData = Icons.trending_down;
+                    iconColor = Colors.red.shade700;
+                    title = 'Trade Loss';
+                    subtitle = 'Related ID: ${transaction.relatedTradeId ?? "N/A"}';
+                    break;
+                  case UnifiedTransactionCategory.fee:
+                    iconData = Icons.receipt_long_outlined;
+                    iconColor = Colors.orange.shade700;
+                    title = 'Fee Charged';
+                    subtitle = transaction.originalTypeFromDb ?? transaction.description ?? '';
+                    break;
+                  case UnifiedTransactionCategory.commission:
+                    iconData = Icons.handshake_outlined;
+                    iconColor = Colors.brown.shade600;
+                    title = 'Commission';
+                    subtitle = transaction.originalTypeFromDb ?? transaction.description ?? '';
+                    break;
+                  case UnifiedTransactionCategory.dividend:
+                    iconData = Icons.paid_outlined;
+                    iconColor = Colors.teal.shade600;
+                    title = 'Dividend';
+                    subtitle = 'Related ID: ${transaction.relatedTradeId ?? "N/A"}';
+                    break;
+                  case UnifiedTransactionCategory.interest:
+                    iconData = Icons.attach_money_outlined;
+                    iconColor = Colors.lightGreen.shade700;
+                    title = 'Interest';
+                    subtitle = transaction.originalTypeFromDb ?? transaction.description ?? '';
+                     break;
+                  case UnifiedTransactionCategory.adjustment:
+                     iconData = Icons.tune_outlined;
+                     iconColor = Colors.grey.shade600;
+                     title = 'Adjustment';
+                     subtitle = transaction.originalTypeFromDb ?? transaction.description ?? '';
+                     break;
+                  default: // other
+                    iconData = Icons.info_outline;
+                    iconColor = Colors.grey.shade600;
+                    title = transaction.displayType;
+                    subtitle = transaction.originalTypeFromDb ?? transaction.description ?? '';
+                }
+              }
+
+              return Card(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                elevation: 1,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                child: InkWell(
+                  onTap: () {
+                    setState(() {
+                      _expandedTransactions[transaction.id] = !isExpanded;
+                    });
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(iconData, color: iconColor, size: 28),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    title,
+                                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600, fontSize: 15),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    DateFormat('MMM d, yyyy hh:mm a').format(transaction.createdAt.toLocal()),
+                                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withOpacity(0.6), fontSize: 11),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Text(
+                              '${transaction.amount < 0 ? '-' : (transaction.source == TransactionSource.account && transaction.amount > 0 ? '+' : '')}\$${transaction.amount.abs().toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: transaction.amount == 0 ? theme.colorScheme.onSurface : (transaction.amount > 0 ? Colors.green.shade700 : Colors.red.shade700),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (isExpanded) ...[
+                          const Divider(height: 24, thickness: 0.5, indent: 40),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4.0, left: 40), // Indent details
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildDetailRow(context, 'Type:', subtitle),
+                                _buildDetailRow(context, 'Transaction ID:', transaction.id),
+                                if (transaction.source == TransactionSource.system) ...[ // Corrected
+                                  if (transaction.relatedTradeId != null) _buildDetailRow(context, 'Related ID:', transaction.relatedTradeId!),
+                                ],
+                                if (transaction.notes != null && transaction.notes!.isNotEmpty) _buildDetailRow(context, 'Notes:', transaction.notes!),
+                                if (transaction.description != null && transaction.description!.isNotEmpty && transaction.notes != transaction.description) 
+                                  _buildDetailRow(context, 'Description:', transaction.description!),
+
+                              ],
+                            ),
+                          )
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              );
             },
           ),
-        );
-      },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => Center(
-        child: Text('Error loading transactions: ${error.toString()}'),
-      ),
+        ),
+        if (historyState.isLoadingMore)
+           const Padding(
+             padding: EdgeInsets.all(8.0),
+             child: Center(child: CircularProgressIndicator()),
+           ),
+      ],
     );
   }
 
-  Widget _buildTransactionItem(BuildContext context, Transaction transaction) {
+  Widget _buildDetailRow(BuildContext context, String label, String value) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('$label ', style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.bold)),
+          Expanded(child: Text(value, style: theme.textTheme.bodyMedium)),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildEmptyState(BuildContext context, String title, String message) {
     final theme = Theme.of(context);
 
-    // Get expanded state for this transaction
-    final isExpanded = _expandedTransactions[transaction.id] ?? false;
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 4),
-      elevation: 1,
-      child: InkWell(
-        onTap: () {
-          setState(() {
-            // Toggle expanded state
-            _expandedTransactions[transaction.id] = !isExpanded;
-          });
-        },
-        child: Container(
-          color: theme.colorScheme.surface,
-          child: Column(
-            children: [
-              // Main content (always visible)
-              Container(
-                color: theme.colorScheme.surface,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surface,
-                    border: Border(
-                      left: BorderSide(
-                        color: transaction.getColor(context),
-                        width: 4,
-                      ),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      // Transaction type and description
-                      Expanded(
-                        flex: 2,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Text(
-                                  transaction.getTypeDisplayName(),
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              transaction.description ?? '',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: Colors.grey,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      // Amount and date
-                      Expanded(
-                        flex: 1,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              '${transaction.type == TransactionType.deposit || transaction.type == TransactionType.profit || transaction.type == TransactionType.credit ? '+' : '-'}\$${transaction.amount.toStringAsFixed(2)}',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: transaction.getColor(context),
-                                fontSize: 15,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              DateFormat('MM/dd HH:mm')
-                                  .format(transaction.createdAt),
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // Expanded details section (visible when tapped)
-              if (isExpanded)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  color: theme.colorScheme.surface.withOpacity(0.7),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildDetailItem(
-                              context,
-                              'Transaction ID',
-                              '#${transaction.id}',
-                            ),
-                          ),
-                          Expanded(
-                            child: _buildDetailItem(
-                              context,
-                              'Date & Time',
-                              DateFormat('yyyy.MM.dd HH:mm:ss')
-                                  .format(transaction.createdAt),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildDetailItem(
-                              context,
-                              'Type',
-                              transaction.getTypeDisplayName(),
-                              valueColor: transaction.getColor(context),
-                            ),
-                          ),
-                          Expanded(
-                            child: _buildDetailItem(
-                              context,
-                              'Amount',
-                              '\$${transaction.amount.toStringAsFixed(2)}',
-                              valueColor: transaction.getColor(context),
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (transaction.description != null &&
-                          transaction.description!.isNotEmpty)
-                        const SizedBox(height: 8),
-                      if (transaction.description != null &&
-                          transaction.description!.isNotEmpty)
-                        _buildDetailItem(
-                          context,
-                          'Description',
-                          transaction.description!,
-                        ),
-                    ],
-                  ),
-                ),
-            ],
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.history,
+            size: 64,
+            color: theme.colorScheme.primary.withOpacity(0.7),
           ),
-        ),
+          const SizedBox(height: 16),
+          Text(
+            title,
+            style: theme.textTheme.titleLarge,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            message,
+            style: theme.textTheme.bodyMedium,
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }
@@ -1440,13 +1128,6 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                               trade.symbolName,
                             ),
                           ),
-                          // Expanded(
-                          //   child: _buildDetailItem(
-                          //     context,
-                          //     'Leverage',
-                          //     '${trade.leverage}x',
-                          //   ),
-                          // ),
                         ],
                       ),
                     ],
@@ -1505,43 +1186,4 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
       ],
     );
   }
-
-  Widget _buildEmptyState(BuildContext context, String title, String subtitle) {
-    final theme = Theme.of(context);
-
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.history,
-            size: 64,
-            color: theme.colorScheme.primary.withOpacity(0.7),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            title,
-            style: theme.textTheme.titleLarge,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            subtitle,
-            style: theme.textTheme.bodyMedium,
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// Mutable version of TransactionParams for internal state
-class _TransactionParamsState {
-  int limit;
-  int offset;
-
-  _TransactionParamsState({
-    this.limit = 50,
-    this.offset = 0,
-  });
 }

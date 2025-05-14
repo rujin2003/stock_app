@@ -11,10 +11,7 @@ class TransactionHistoryPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isAdmin = Supabase.instance.client.auth.currentUser?.userMetadata?['is_admin'] == true;
-    final transactionsAsync = isAdmin 
-        ? ref.watch(verifiedTransactionsProvider)
-        : ref.watch(userVerifiedTransactionsProvider);
+    final transactionsAsync = ref.watch(combinedTransactionsProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -23,11 +20,7 @@ class TransactionHistoryPage extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () {
-              if (isAdmin) {
-                ref.invalidate(verifiedTransactionsProvider);
-              } else {
-                ref.invalidate(userVerifiedTransactionsProvider);
-              }
+              ref.invalidate(combinedTransactionsProvider);
             },
           ),
         ],
@@ -46,24 +39,50 @@ class TransactionHistoryPage extends ConsumerWidget {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'No transaction history',
+                    'No Transactions Yet',
                     style: TextStyle(
-                      fontSize: 18,
-                      color: Colors.grey[600],
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[700],
                     ),
+                  ),
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    child: Text(
+                      'Your transaction history will appear here once you make a deposit or withdrawal',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.grey[600],
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                    icon: const Icon(Icons.add),
+                    label: const Text('Make a Transaction'),
                   ),
                 ],
               ),
             );
           }
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: transactions.length,
-            itemBuilder: (context, index) {
-              final transaction = transactions[index];
-              return TransactionHistoryCard(transaction: transaction);
+          return RefreshIndicator(
+            onRefresh: () async {
+              ref.invalidate(combinedTransactionsProvider);
             },
+            child: ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: transactions.length,
+              itemBuilder: (context, index) {
+                final transaction = transactions[index];
+                return TransactionHistoryCard(transaction: transaction);
+              },
+            ),
           );
         },
         loading: () => const LoadingIndicator(),
@@ -78,20 +97,31 @@ class TransactionHistoryPage extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
               Text(
-                'Error loading transactions',
+                'Unable to load transactions',
                 style: TextStyle(
                   fontSize: 18,
                   color: Colors.grey[600],
                 ),
               ),
               const SizedBox(height: 8),
-              Text(
-                error.toString(),
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[500],
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Text(
+                  'Please check your internet connection and try again',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[500],
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: () {
+                  ref.invalidate(combinedTransactionsProvider);
+                },
+                icon: const Icon(Icons.refresh),
+                label: const Text('Try Again'),
               ),
             ],
           ),
@@ -169,6 +199,13 @@ class TransactionHistoryCard extends StatelessWidget {
                 DateFormat('MMM dd, yyyy HH:mm').format(transaction.verifiedTime!),
               ),
             ],
+            if (transaction.verifiedBy != null) ...[
+              _buildDetailRow(
+                context,
+                'Verified By',
+                _shortenId(transaction.verifiedBy!),
+              ),
+            ],
             if (transaction.notes?.isNotEmpty == true) ...[
               const SizedBox(height: 8),
               Text(
@@ -189,6 +226,28 @@ class TransactionHistoryCard extends StatelessWidget {
                   style: theme.textTheme.bodyMedium,
                 ),
               ),
+            ],
+            if (transaction.userAccount != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                'User Account Details:',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              _buildAccountDetails(context, transaction.userAccount!),
+            ],
+            if (transaction.adminAccount != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Admin Account Details:',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              _buildAccountDetails(context, transaction.adminAccount!),
             ],
           ],
         ),
@@ -225,6 +284,31 @@ class TransactionHistoryCard extends StatelessWidget {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAccountDetails(BuildContext context, Map<String, dynamic> account) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.grey[100],
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (account['bank_name'] != null)
+            _buildDetailRow(context, 'Bank', account['bank_name']),
+          if (account['account_no'] != null)
+            _buildDetailRow(context, 'Account', account['account_no']),
+          if (account['ifsc_code'] != null)
+            _buildDetailRow(context, 'IFSC', account['ifsc_code']),
+          if (account['upi_id'] != null)
+            _buildDetailRow(context, 'UPI ID', account['upi_id']),
+          if (account['wallet_address'] != null)
+            _buildDetailRow(context, 'Wallet', account['wallet_address']),
         ],
       ),
     );

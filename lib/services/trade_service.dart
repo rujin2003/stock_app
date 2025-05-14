@@ -89,14 +89,14 @@ class TradeService {
     );
 
     try {
-      // Insert the trade first
+ 
       final response = await _supabase
           .from('trades')
           .insert(trade.toJson())
           .select()
           .single();
 
-      // If trade is successful, deduct the amount from balance
+    
       if (response != null) {
         // Update account balance
         await _supabase
@@ -107,7 +107,7 @@ class TradeService {
             })
             .eq('user_id', userId);
 
-        // Update appusers table with the new balance
+   
         await _supabase
             .from('appusers')
             .update({
@@ -115,12 +115,12 @@ class TradeService {
             })
             .eq('user_id', userId);
 
-        // Update account metrics
+       
         await _accountService.updateAccountMetrics();
 
-        // Reload states if ref is provided
+      
         if (ref != null) {
-          // Force reload of all states
+         
           await getTrades();
           await _accountService.getAccountBalance();
         }

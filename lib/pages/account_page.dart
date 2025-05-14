@@ -380,61 +380,7 @@ class _ProfileSection extends ConsumerWidget {
           ),
         ),
         const Gap(24),
-        Text(
-          'Display Settings',
-          style: theme.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.bold,
-            color: theme.colorScheme.primary,
-          ),
-        ),
-        const SizedBox(height: 16),
-        Card(
-          elevation: 4,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Time Zone',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Select your preferred time zone for displaying timestamps throughout the app:',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: theme.colorScheme.onSurface.withOpacity(0.7),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                // Radio buttons for time zone selection
-                ...TimeZone.values.map((timeZone) {
-                  return RadioListTile<TimeZone>(
-                    title: Text(timeZoneDisplayNames[timeZone] ?? ''),
-                    subtitle: Text(timeZoneOffsets[timeZone] ?? ''),
-                    value: timeZone,
-                    groupValue: selectedTimeZone,
-                    onChanged: (value) {
-                      if (value != null) {
-                        ref.read(timeZoneProvider.notifier).setTimeZone(value);
-                      }
-                    },
-                    activeColor: theme.colorScheme.primary,
-                    dense: true,
-                  );
-                }).toList(),
-              ],
-            ),
-          ),
-        ),
+      
         const Gap(24),
         Text(
           'Support Tickets',

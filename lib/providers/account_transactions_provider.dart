@@ -94,4 +94,32 @@ final userVerifiedTransactionsProvider = FutureProvider<List<AccountTransaction>
   return (response as List)
       .map((json) => AccountTransaction.fromJson(json))
       .toList();
+});
+
+final combinedTransactionsProvider = FutureProvider<List<AccountTransaction>>((ref) async {
+  final supabase = Supabase.instance.client;
+  final currentUser = supabase.auth.currentUser;
+  
+  if (currentUser == null) {
+    return [];
+  }
+  
+  try {
+    final response = await supabase
+        .from('account_transactions')
+        .select('*, user_account:user_accounts(*), admin_account:admin_accounts(*)')
+        .eq('user_id', currentUser.id)
+        .order('created_at', ascending: false);
+    
+    if (response == null || response.isEmpty) {
+      return [];
+    }
+    
+    return (response as List)
+        .map((json) => AccountTransaction.fromJson(json))
+        .toList();
+  } catch (e) {
+    print('Error loading transactions: $e');
+    return [];
+  }
 }); 

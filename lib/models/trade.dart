@@ -4,15 +4,18 @@ enum TradeType {
 }
 
 enum OrderType {
-  market,
-  limit,
-  stopLimit,
+  market,    // Execute immediately at current market price
+  limit,     // Execute at specified price or better
+  stopLimit, // Execute at specified price when stop price is reached
+  stop,      // Execute at market when stop price is reached
 }
 
 enum TradeStatus {
-  open,
-  closed,
-  pending,
+  open,      // Active position
+  closed,    // Position has been closed
+  pending,   // Order is waiting to be executed
+  cancelled, // Order was cancelled
+  rejected,  // Order was rejected
 }
 
 class Trade {
@@ -23,18 +26,18 @@ class Trade {
   final TradeType type;
   final OrderType orderType;
   final double entryPrice;
-  final double? limitPrice; // For limit and stop limit orders
-  final double? stopPrice; // For stop limit orders
+  final double? limitPrice;     // For limit and stop limit orders
+  final double? stopPrice;      // For stop and stop limit orders
   final double? exitPrice;
-  final double volume; // Lot size
-  final double leverage;
-  final double? stopLoss;
-  final double? takeProfit;
-  final double? trailingStopLoss; // Distance in points/pips
+  final double volume;          // Position size in lots
+  final double leverage;        // Leverage multiplier
+  final double? stopLoss;       // Stop loss price
+  final double? takeProfit;     // Take profit price
+  final double? trailingStopLoss; // Trailing stop loss distance in points
   final DateTime openTime;
   final DateTime? closeTime;
   final TradeStatus status;
-  final double? profit;
+  final double? profit;         // Realized profit/loss
   final String userId;
 
   Trade({
@@ -69,9 +72,23 @@ class Trade {
         ? currentPrice - entryPrice
         : entryPrice - currentPrice;
 
-    // Basic profit calculation (simplified)
-    // In a real system, this would account for pip value, lot size, etc.
-    return priceDifference * volume * leverage;
+    // Calculate profit based on position size and leverage
+    final positionValue = entryPrice * volume;
+    final pipValue = positionValue / 10000; // Assuming 1 pip = 0.0001 for most forex pairs
+    final profitInPips = priceDifference / 0.0001;
+    
+    return profitInPips * pipValue * leverage;
+  }
+
+  // Calculate required margin
+  double calculateRequiredMargin() {
+    final positionValue = entryPrice * volume;
+    return positionValue / leverage;
+  }
+
+  // Calculate platform fee
+  double calculatePlatformFee() {
+    return volume * 15.0; // $15 per lot
   }
 
   // Create a copy of this trade with updated fields

@@ -282,11 +282,11 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                 
 
                   // Order Type Selection
                   _buildOrderTypeDropdown(context),
-                  const SizedBox(height: 16),
+               
 
                   // Volume (lot size)
                   Column(
@@ -862,6 +862,23 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
         return _selectedTradeType == TradeType.buy
             ? 'PLACE BUY STOP LIMIT'
             : 'PLACE SELL STOP LIMIT';
+      case OrderType.stop:
+        return _selectedTradeType == TradeType.buy
+            ? 'PLACE BUY STOP'
+            : 'PLACE SELL STOP';
+    }
+  }
+
+  String _getOrderTypeText() {
+    switch (_selectedOrderType) {
+      case OrderType.market:
+        return 'Market';
+      case OrderType.limit:
+        return 'Limit';
+      case OrderType.stopLimit:
+        return 'Stop Limit';
+      case OrderType.stop:
+        return 'Stop';
     }
   }
 
@@ -885,17 +902,162 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
     // Capture the ScaffoldMessengerState before any async operations
     final scaffoldMessenger = ScaffoldMessenger.of(context);
 
+    // Validate volume
+    if (form.volume <= 0) {
+      scaffoldMessenger.showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a valid volume greater than 0'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Validate leverage
+    if (form.leverage <= 0) {
+      scaffoldMessenger.showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a valid leverage greater than 0'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Validate limit orders
+    if (_selectedOrderType == OrderType.limit) {
+      if (form.limitPrice == null) {
+        scaffoldMessenger.showSnackBar(
+          SnackBar(
+            content: Text(_selectedTradeType == TradeType.buy
+                ? 'Please enter a limit price to buy at'
+                : 'Please enter a limit price to sell at'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      // Validate limit price
+      if (_selectedTradeType == TradeType.buy && form.limitPrice! >= widget.currentPrice) {
+        scaffoldMessenger.showSnackBar(
+          const SnackBar(
+            content: Text('Buy limit price must be below current price'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      if (_selectedTradeType == TradeType.sell && form.limitPrice! <= widget.currentPrice) {
+        scaffoldMessenger.showSnackBar(
+          const SnackBar(
+            content: Text('Sell limit price must be above current price'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
+    // Validate stop limit orders
+    if (_selectedOrderType == OrderType.stopLimit) {
+      if (form.limitPrice == null || form.stopPrice == null) {
+        scaffoldMessenger.showSnackBar(
+          const SnackBar(
+            content: Text('Both limit price and stop price are required for stop limit orders'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      // Validate stop price
+      if (_selectedTradeType == TradeType.buy && form.stopPrice! <= widget.currentPrice) {
+        scaffoldMessenger.showSnackBar(
+          const SnackBar(
+            content: Text('Buy stop price must be above current price'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      if (_selectedTradeType == TradeType.sell && form.stopPrice! >= widget.currentPrice) {
+        scaffoldMessenger.showSnackBar(
+          const SnackBar(
+            content: Text('Sell stop price must be below current price'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
+    // Validate stop loss
+    if (stopLoss != null) {
+      if (_selectedTradeType == TradeType.buy && stopLoss >= widget.currentPrice) {
+        scaffoldMessenger.showSnackBar(
+          const SnackBar(
+            content: Text('Stop loss must be below current price for buy orders'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      if (_selectedTradeType == TradeType.sell && stopLoss <= widget.currentPrice) {
+        scaffoldMessenger.showSnackBar(
+          const SnackBar(
+            content: Text('Stop loss must be above current price for sell orders'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
+    // Validate take profit
+    if (takeProfit != null) {
+      if (_selectedTradeType == TradeType.buy && takeProfit <= widget.currentPrice) {
+        scaffoldMessenger.showSnackBar(
+          const SnackBar(
+            content: Text('Take profit must be above current price for buy orders'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      if (_selectedTradeType == TradeType.sell && takeProfit >= widget.currentPrice) {
+        scaffoldMessenger.showSnackBar(
+          const SnackBar(
+            content: Text('Take profit must be below current price for sell orders'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
     // Check account balance
     try {
       final accountBalance = await ref.read(accountServiceProvider).getAccountBalance();
-      final requiredMargin = (widget.currentPrice * form.volume) / form.leverage;
+      final positionValue = widget.currentPrice * form.volume;
+      final requiredMargin = positionValue / form.leverage;
       final platformFee = form.volume * 15.0; // $15 per lot
       final totalDeduction = requiredMargin + platformFee;
       
       if (accountBalance.balance <= 0 || accountBalance.balance < totalDeduction) {
         scaffoldMessenger.showSnackBar(
           SnackBar(
-            content: Text('Insufficient balance. Required margin: \$${requiredMargin.toStringAsFixed(2)} + Platform fee: \$${platformFee.toStringAsFixed(2)} = Total: \$${totalDeduction.toStringAsFixed(2)}'),
+            content: Text(
+              'Insufficient balance.\n'
+              'Required margin: \$${requiredMargin.toStringAsFixed(2)}\n'
+              'Platform fee: \$${platformFee.toStringAsFixed(2)}\n'
+              'Total required: \$${totalDeduction.toStringAsFixed(2)}\n'
+              'Available balance: \$${accountBalance.balance.toStringAsFixed(2)}'
+            ),
             backgroundColor: Colors.red,
           ),
         );
@@ -911,184 +1073,6 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
       return;
     }
 
-    // Validate volume
-    if (form.volume <= 0) {
-      scaffoldMessenger.showSnackBar(
-        const SnackBar(
-          content: Text('Please enter a valid volume greater than 0'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    // Validate required fields based on order type
-    if (_selectedOrderType == OrderType.limit && form.limitPrice == null) {
-      scaffoldMessenger.showSnackBar(
-        SnackBar(
-          content: Text(_selectedTradeType == TradeType.buy
-              ? 'Please enter a limit price to buy at'
-              : 'Please enter a limit price to sell at'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    if (_selectedOrderType == OrderType.stopLimit &&
-        (form.stopPrice == null || form.limitPrice == null)) {
-      scaffoldMessenger.showSnackBar(
-        SnackBar(
-          content: Text(form.stopPrice == null && form.limitPrice == null
-              ? 'Please enter both stop price and limit price'
-              : form.stopPrice == null
-                  ? 'Please enter a stop price for order activation'
-                  : 'Please enter a limit price for order execution'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    // Validate price levels for limit orders
-    if (_selectedOrderType == OrderType.limit) {
-      bool isValidPrice = _selectedTradeType == TradeType.buy
-          ? form.limitPrice! <
-              widget.currentPrice // Buy Limit must be below current price
-          : form.limitPrice! >
-              widget.currentPrice; // Sell Limit must be above current price
-
-      if (!isValidPrice) {
-        scaffoldMessenger.showSnackBar(
-          SnackBar(
-            content: Text(_selectedTradeType == TradeType.buy
-                ? 'Buy Limit price must be below the current price'
-                : 'Sell Limit price must be above the current price'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-    }
-
-    // Validate price levels for stop limit orders
-    if (_selectedOrderType == OrderType.stopLimit) {
-      // Check if stop price is in the right direction
-      bool isValidStopPrice = _selectedTradeType == TradeType.buy
-          ? form.stopPrice! >
-              widget.currentPrice // Buy Stop must be above current price
-          : form.stopPrice! <
-              widget.currentPrice; // Sell Stop must be below current price
-
-      if (!isValidStopPrice) {
-        scaffoldMessenger.showSnackBar(
-          SnackBar(
-            content: Text(_selectedTradeType == TradeType.buy
-                ? 'Buy Stop price must be above the current price'
-                : 'Sell Stop price must be below the current price'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-
-      // Check if limit price is in the right direction relative to stop price
-      bool isValidLimitPrice = _selectedTradeType == TradeType.buy
-          ? form.limitPrice! <
-              form.stopPrice! // Buy Limit must be below Stop price
-          : form.limitPrice! >
-              form.stopPrice!; // Sell Limit must be above Stop price
-
-      if (!isValidLimitPrice) {
-        scaffoldMessenger.showSnackBar(
-          SnackBar(
-            content: Text(_selectedTradeType == TradeType.buy
-                ? 'Buy Limit price must be below the Stop price'
-                : 'Sell Limit price must be above the Stop price'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-    }
-
-    // Validate stop loss for buy orders
-    if (stopLoss != null && _selectedTradeType == TradeType.buy) {
-      if (stopLoss >= widget.currentPrice) {
-        scaffoldMessenger.showSnackBar(
-          const SnackBar(
-            content: Text(
-                'Stop Loss for Buy orders must be below the current price'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-    }
-
-    // Validate stop loss for sell orders
-    if (stopLoss != null && _selectedTradeType == TradeType.sell) {
-      if (stopLoss <= widget.currentPrice) {
-        scaffoldMessenger.showSnackBar(
-          const SnackBar(
-            content: Text(
-                'Stop Loss for Sell orders must be above the current price'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-    }
-
-    // Validate take profit for buy orders
-    if (takeProfit != null && _selectedTradeType == TradeType.buy) {
-      if (takeProfit <= widget.currentPrice) {
-        scaffoldMessenger.showSnackBar(
-          const SnackBar(
-            content: Text(
-                'Take Profit for Buy orders must be above the current price'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-    }
-
-    // Validate take profit for sell orders
-    if (takeProfit != null && _selectedTradeType == TradeType.sell) {
-      if (takeProfit >= widget.currentPrice) {
-        scaffoldMessenger.showSnackBar(
-          const SnackBar(
-            content: Text(
-                'Take Profit for Sell orders must be below the current price'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-    }
-
-    // Validate trailing stop loss
-    if (trailingStopLoss != null && trailingStopLoss <= 0) {
-      scaffoldMessenger.showSnackBar(
-        const SnackBar(
-          content: Text('Trailing Stop Loss must be greater than 0'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    final params = CreateTradeParams(
-      symbolCode: widget.symbol.code,
-      symbolName: widget.symbol.name,
-      type: _selectedTradeType,
-      currentPrice: widget.currentPrice,
-      stopLoss: stopLoss,
-      takeProfit: takeProfit,
-      trailingStopLoss: trailingStopLoss,
-    );
-
     try {
       // Show loading indicator
       scaffoldMessenger.showSnackBar(
@@ -1096,6 +1080,17 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
           content: Text('Processing trade...'),
           duration: Duration(seconds: 1),
         ),
+      );
+
+      // Create trade parameters
+      final params = CreateTradeParams(
+        symbolCode: widget.symbol.code,
+        symbolName: widget.symbol.name,
+        type: _selectedTradeType,
+        currentPrice: widget.currentPrice,
+        stopLoss: stopLoss,
+        takeProfit: takeProfit,
+        trailingStopLoss: trailingStopLoss,
       );
 
       // Execute the trade
@@ -1140,17 +1135,6 @@ class _TradeButtonsState extends ConsumerState<TradeButtons> {
           ),
         );
       }
-    }
-  }
-
-  String _getOrderTypeText() {
-    switch (_selectedOrderType) {
-      case OrderType.market:
-        return 'Market';
-      case OrderType.limit:
-        return 'Limit';
-      case OrderType.stopLimit:
-        return 'Stop Limit';
     }
   }
 

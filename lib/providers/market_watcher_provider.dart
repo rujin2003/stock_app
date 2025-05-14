@@ -7,8 +7,7 @@ import 'market_data_provider.dart';
 // Provider for the MarketWatcherService
 final marketWatcherServiceProvider = Provider<MarketWatcherService>((ref) {
   final tradeService = TradeService();
-  final webSocketService = WebSocketService();
-  webSocketService.initialize();
+  final webSocketService = ref.watch(webSocketServiceProvider);
 
   // Create and return the MarketWatcherService
   final marketWatcherService = MarketWatcherService(
@@ -22,7 +21,6 @@ final marketWatcherServiceProvider = Provider<MarketWatcherService>((ref) {
   // Dispose the service when the provider is disposed
   ref.onDispose(() {
     marketWatcherService.stopWatching();
-    webSocketService.dispose();
   });
 
   return marketWatcherService;

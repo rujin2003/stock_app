@@ -62,322 +62,6 @@ class _TransactionsPageState extends ConsumerState<TransactionsPage>
     super.dispose();
   }
 
-  Future<void> _loadAdminAccounts() async {
-    try {
-      final response = await Supabase.instance.client
-          .from('admin_accounts')
-          .select()
-          .order('created_at', ascending: false);
-      setState(() {
-        _adminAccounts = List<Map<String, dynamic>>.from(response);
-      });
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading admin accounts: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _loadUserAccounts() async {
-    try {
-      final user = Supabase.instance.client.auth.currentUser;
-      if (user == null) return;
-
-      final response = await Supabase.instance.client
-          .from('user_accounts')
-          .select()
-          .eq('user_id', user.id);
-      setState(() {
-        _userAccounts = List<Map<String, dynamic>>.from(response);
-      });
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading user accounts: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _loadUserBalance() async {
-    try {
-      final user = Supabase.instance.client.auth.currentUser;
-      if (user == null) return;
-
-      final response = await Supabase.instance.client
-          .from('account_balances')
-          .select('balance')
-          .eq('user_id', user.id)
-          .single();
-      
-      setState(() {
-        _userBalance = (response['balance'] as num).toDouble();
-      });
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading balance: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _pickPaymentProof() async {
-    final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-    if (image != null) {
-      setState(() {
-        _paymentProof = File(image.path);
-      });
-    }
-  }
-
-  Future<String?> _uploadPaymentProof(File file) async {
-    try {
-      final user = Supabase.instance.client.auth.currentUser;
-      if (user == null) throw Exception('User not authenticated');
-
-      final fileName = '${user.id}_${DateTime.now().millisecondsSinceEpoch}${path.extension(file.path)}';
-      final filePath = 'payment_proofs/$fileName';
-
-      await Supabase.instance.client.storage
-          .from('payments')
-          .upload(filePath, file);
-
-      final url = Supabase.instance.client.storage
-          .from('payments')
-          .getPublicUrl(filePath);
-
-      return url;
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error uploading payment proof: $e')),
-        );
-      }
-      return null;
-    }
-  }
-
-  Future<void> _submitDeposit() async {
-    if (!_formKey.currentState!.validate()) return;
-    if (_selectedUserAccountId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select your account')),
-      );
-      return;
-    }
-    if (_selectedAdminAccountId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select an admin account')),
-      );
-      return;
-    }
-    if (_paymentProof == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please upload payment proof')),
-      );
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    try {
-      final user = Supabase.instance.client.auth.currentUser;
-      if (user == null) throw Exception('User not authenticated');
-
-      // Get current balance
-      final balanceResponse = await Supabase.instance.client
-          .from('account_balances')
-          .select('balance')
-          .eq('user_id', user.id)
-          .single();
-      
-      final currentBalance = (balanceResponse['balance'] as num).toDouble();
-
-      // Upload payment proof first
-      final paymentProofUrl = await _uploadPaymentProof(_paymentProof!);
-      if (paymentProofUrl == null) {
-        throw Exception('Failed to upload payment proof');
-      }
-
-      // Create transaction with payment proof URL
-      await Supabase.instance.client.from('account_transactions').insert({
-        'user_id': user.id,
-        'transaction_type': 'deposit',
-        'amount': double.parse(_amountController.text),
-        'payment_proof': paymentProofUrl,
-        'user_current_balance': currentBalance,
-        'account_balance_id': null, // Will be set by trigger
-        'account_info_id': _selectedUserAccountId!.replaceAll('account_', ''), // User's account ID
-        'admin_account_info_id': _selectedAdminAccountId!.replaceAll('account_', ''), // Admin's account ID
-      });
-
-      if (mounted) {
-        // Use GoRouter for navigation
-        context.go('/transaction_success');
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error submitting deposit: $e')),
-        );
-      }
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _submitWithdraw() async {
-    if (!_formKey.currentState!.validate()) return;
-    if (_selectedAccountType == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select an account type')),
-      );
-      return;
-    }
-    if (_selectedUserAccountId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a withdrawal account')),
-      );
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    try {
-      final user = Supabase.instance.client.auth.currentUser;
-      if (user == null) throw Exception('User not authenticated');
-
-      // Get current balance
-      final balanceResponse = await Supabase.instance.client
-          .from('account_balances')
-          .select('balance')
-          .eq('user_id', user.id)
-          .single();
-      
-      final currentBalance = (balanceResponse['balance'] as num).toDouble();
-
-      // Create transaction
-      await Supabase.instance.client.from('account_transactions').insert({
-        'user_id': user.id,
-        'transaction_type': 'withdraw',
-        'amount': double.parse(_amountController.text),
-        'user_current_balance': currentBalance,
-        'account_balance_id': null, // Will be set by trigger
-        'account_info_id': _selectedUserAccountId!.replaceAll('account_', ''), // User's account ID
-        'admin_account_info_id': null, // No admin account for withdrawals
-      });
-
-      if (mounted) {
-        // Use GoRouter for navigation
-        context.go('/transaction_success');
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error submitting withdrawal: $e')),
-        );
-      }
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _addNewAccount() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() => _isLoading = true);
-
-    try {
-      final user = Supabase.instance.client.auth.currentUser;
-      if (user == null) throw Exception('User not authenticated');
-
-      Map<String, dynamic> accountData = {
-        'user_id': user.id,
-        'account_type': _selectedAccountType,
-      };
-
-      if (_selectedAccountType == 'bank_transfer') {
-        accountData.addAll({
-          'bank_name': _bankNameController.text,
-          'ifsc_code': _ifscCodeController.text,
-          'bank_address': _bankAddressController.text,
-          'account_no': _accountNoController.text,
-          'full_name': _fullNameController.text,
-        });
-      } else if (_selectedAccountType == 'upi') {
-        accountData['upi_id'] = _upiIdController.text;
-        accountData['full_name'] = _fullNameController.text;
-      } else if (_selectedAccountType == 'crypto_wallet') {
-        accountData['wallet_address'] = _walletAddressController.text;
-        accountData['full_name'] = _fullNameController.text;
-      }
-
-      // Insert the new account
-      final response = await Supabase.instance.client
-          .from('user_accounts')
-          .insert(accountData)
-          .select()
-          .single();
-
-      // Reload the accounts list
-      await _loadUserAccounts();
-
-      // Clear form fields
-      _bankNameController.clear();
-      _ifscCodeController.clear();
-      _bankAddressController.clear();
-      _accountNoController.clear();
-      _fullNameController.clear();
-      _upiIdController.clear();
-      _walletAddressController.clear();
-
-      if (mounted) {
-        setState(() {
-          _isAddingNewAccount = false;
-          // Set the selected account ID to the newly created account
-          _selectedUserAccountId = 'account_${response['id']}';
-        });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Account added successfully')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error adding account: $e')),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
-  }
-
-  void _showInfoDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Deposit Instructions'),
-        content: const Text(
-          'Please deposit the amount to the selected account and upload the payment proof screenshot. '
-          'Your deposit will be processed after verification.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
@@ -416,650 +100,126 @@ class _TransactionsPageState extends ConsumerState<TransactionsPage>
         body: TabBarView(
           controller: _tabController,
           children: [
-            // Deposit Tab
-            SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    DropdownButtonFormField<String>(
-                      value: _selectedAccountType,
-                      decoration: const InputDecoration(
-                        labelText: 'Account Type',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: const [
-                        DropdownMenuItem(value: 'upi', child: Text('UPI')),
-                        DropdownMenuItem(
-                            value: 'bank_transfer', child: Text('Bank Transfer')),
-                        DropdownMenuItem(
-                            value: 'crypto_wallet', child: Text('Crypto Wallet')),
-                      ],
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedAccountType = value;
-                          _selectedUserAccountId = null;
-                          _isAddingNewAccount = false;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    if (_selectedAccountType != null)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          DropdownButtonFormField<String>(
-                            value: _selectedUserAccountId,
-                            decoration: const InputDecoration(
-                              labelText: 'Select Account',
-                              border: OutlineInputBorder(),
-                            ),
-                            items: [
-                              const DropdownMenuItem(
-                                value: 'new_account',
-                                child: Text('Add New Account'),
-                              ),
-                              ..._userAccounts
-                                  .where((account) =>
-                                      account['account_type'] == _selectedAccountType)
-                                  .map((account) => DropdownMenuItem<String>(
-                                        value: 'account_${account['id']}',
-                                        child: Text(
-                                            account['account_type'] == 'upi'
-                                                ? 'UPI: ${account['upi_id']}'
-                                                : account['account_type'] == 'bank_transfer'
-                                                    ? 'A/C: ${account['account_no']}'
-                                                    : 'Wallet: ${account['wallet_address']}'
-                                        ),
-                                      ))
-                                  .toList(),
-                            ],
-                            onChanged: (value) {
-                              setState(() {
-                                _selectedUserAccountId = value;
-                                _isAddingNewAccount = value == 'new_account';
-                              });
-                            },
-                          ),
-                          const SizedBox(height: 16),
-                          if (_isAddingNewAccount) ...[
-                            TextFormField(
-                              controller: _fullNameController,
-                              decoration: const InputDecoration(
-                                labelText: 'Full Name',
-                                border: OutlineInputBorder(),
-                              ),
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Please enter full name';
-                                }
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 16),
-                            if (_selectedAccountType == 'bank_transfer') ...[
-                              TextFormField(
-                                controller: _bankNameController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Bank Name',
-                                  border: OutlineInputBorder(),
-                                ),
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Please enter bank name';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 16),
-                              TextFormField(
-                                controller: _ifscCodeController,
-                                decoration: const InputDecoration(
-                                  labelText: 'IFSC Code',
-                                  border: OutlineInputBorder(),
-                                ),
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Please enter IFSC code';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 16),
-                              TextFormField(
-                                controller: _accountNoController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Account Number',
-                                  border: OutlineInputBorder(),
-                                ),
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Please enter account number';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 16),
-                              TextFormField(
-                                controller: _bankAddressController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Bank Address',
-                                  border: OutlineInputBorder(),
-                                ),
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Please enter bank address';
-                                  }
-                                  return null;
-                                },
-                              ),
-                            ] else if (_selectedAccountType == 'upi') ...[
-                              TextFormField(
-                                controller: _upiIdController,
-                                decoration: const InputDecoration(
-                                  labelText: 'UPI ID',
-                                  border: OutlineInputBorder(),
-                                ),
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Please enter UPI ID';
-                                  }
-                                  return null;
-                                },
-                              ),
-                            ] else if (_selectedAccountType == 'crypto_wallet') ...[
-                              TextFormField(
-                                controller: _walletAddressController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Wallet Address',
-                                  border: OutlineInputBorder(),
-                                ),
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Please enter wallet address';
-                                  }
-                                  return null;
-                                },
-                              ),
-                            ],
-                            const SizedBox(height: 16),
-                            ElevatedButton(
-                              onPressed: _isLoading ? null : _addNewAccount,
-                              child: _isLoading
-                                  ? const CircularProgressIndicator()
-                                  : const Text('Add Account'),
-                            ),
-                          ] else if (_selectedUserAccountId != null && !_isAddingNewAccount) ...[
-                            Card(
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Your Account Details',
-                                      style: Theme.of(context).textTheme.titleMedium,
-                                    ),
-                                    const SizedBox(height: 8),
-                                    if (_selectedAccountType == 'upi') ...[
-                                      _buildDetailRow('UPI ID', _userAccounts
-                                          .firstWhere((a) =>
-                                              a['id'].toString() ==
-                                              _selectedUserAccountId!.replaceAll('account_', ''))['upi_id']),
-                                    ] else if (_selectedAccountType == 'bank_transfer') ...[
-                                      _buildDetailRow(
-                                          'Bank Name',
-                                          _userAccounts
-                                              .firstWhere((a) =>
-                                                  a['id'].toString() ==
-                                                  _selectedUserAccountId!.replaceAll('account_', ''))[
-                                                  'bank_name']),
-                                      _buildDetailRow(
-                                          'Account Holder',
-                                          _userAccounts
-                                              .firstWhere((a) =>
-                                                  a['id'].toString() ==
-                                                  _selectedUserAccountId!.replaceAll('account_', ''))[
-                                                  'full_name']),
-                                      _buildDetailRow(
-                                          'Account Number',
-                                          _userAccounts
-                                              .firstWhere((a) =>
-                                                  a['id'].toString() ==
-                                                  _selectedUserAccountId!.replaceAll('account_', ''))[
-                                                  'account_no']),
-                                      _buildDetailRow(
-                                          'IFSC Code',
-                                          _userAccounts
-                                              .firstWhere((a) =>
-                                                  a['id'].toString() ==
-                                                  _selectedUserAccountId!.replaceAll('account_', ''))[
-                                                  'ifsc_code']),
-                                      _buildDetailRow(
-                                          'Bank Address',
-                                          _userAccounts
-                                              .firstWhere((a) =>
-                                                  a['id'].toString() ==
-                                                  _selectedUserAccountId!.replaceAll('account_', ''))[
-                                                  'bank_address']),
-                                    ] else if (_selectedAccountType == 'crypto_wallet') ...[
-                                      _buildDetailRow(
-                                          'Wallet Address',
-                                          _userAccounts
-                                              .firstWhere((a) =>
-                                                  a['id'].toString() ==
-                                                  _selectedUserAccountId!.replaceAll('account_', ''))[
-                                                  'wallet_address']),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            DropdownButtonFormField<String>(
-                              value: _selectedAdminAccountId,
-                              decoration: const InputDecoration(
-                                labelText: 'Select Admin Account',
-                                border: OutlineInputBorder(),
-                              ),
-                              items: _adminAccounts
-                                  .where((account) =>
-                                      account['account_type'] == _selectedAccountType)
-                                  .map((account) => DropdownMenuItem<String>(
-                                        value: 'account_${account['id']}',
-                                        child: Text(
-                                            account['account_type'] == 'upi'
-                                                ? 'UPI: ${account['upi_id']}'
-                                                : account['account_type'] == 'bank_transfer'
-                                                    ? 'A/C: ${account['account_no']}'
-                                                    : 'Wallet: ${account['wallet_address']}'
-                                        ),
-                                      ))
-                                  .toList(),
-                              onChanged: (value) {
-                                setState(() {
-                                  _selectedAdminAccountId = value;
-                                });
-                              },
-                            ),
-                            if (_selectedAdminAccountId != null) ...[
-                              const SizedBox(height: 16),
-                              Card(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Admin Account Details',
-                                        style: Theme.of(context).textTheme.titleMedium,
-                                      ),
-                                      const SizedBox(height: 8),
-                                      if (_selectedAccountType == 'upi') ...[
-                                        _buildDetailRow('UPI ID', _adminAccounts
-                                            .firstWhere((a) =>
-                                                a['id'].toString() ==
-                                                _selectedAdminAccountId!.replaceAll('account_', ''))['upi_id']),
-                                        if (_adminAccounts
-                                                .firstWhere((a) =>
-                                                    a['id'].toString() ==
-                                                    _selectedAdminAccountId!.replaceAll('account_', ''))[
-                                            'upi_qr_code_url'] !=
-                                            null)
-                                          Center(
-                                            child: Image.network(
-                                              _adminAccounts
-                                                  .firstWhere((a) =>
-                                                      a['id'].toString() ==
-                                                      _selectedAdminAccountId!.replaceAll('account_', ''))[
-                                                          'upi_qr_code_url']
-                                                  .toString(),
-                                              height: 200,
-                                            ),
-                                          ),
-                                      ] else if (_selectedAccountType == 'bank_transfer') ...[
-                                        _buildDetailRow(
-                                            'Bank Name',
-                                            _adminAccounts
-                                                .firstWhere((a) =>
-                                                    a['id'].toString() ==
-                                                    _selectedAdminAccountId!.replaceAll('account_', ''))[
-                                                    'bank_name']),
-                                        _buildDetailRow(
-                                            'Account Holder',
-                                            _adminAccounts
-                                                .firstWhere((a) =>
-                                                    a['id'].toString() ==
-                                                    _selectedAdminAccountId!.replaceAll('account_', ''))[
-                                                    'account_holder_name']),
-                                        _buildDetailRow(
-                                            'Account Number',
-                                            _adminAccounts
-                                                .firstWhere((a) =>
-                                                    a['id'].toString() ==
-                                                    _selectedAdminAccountId!.replaceAll('account_', ''))[
-                                                    'account_no']),
-                                        _buildDetailRow(
-                                            'IFSC Code',
-                                            _adminAccounts
-                                                .firstWhere((a) =>
-                                                    a['id'].toString() ==
-                                                    _selectedAdminAccountId!.replaceAll('account_', ''))[
-                                                    'ifsc_code']),
-                                        _buildDetailRow(
-                                            'Bank Address',
-                                            _adminAccounts
-                                                .firstWhere((a) =>
-                                                    a['id'].toString() ==
-                                                    _selectedAdminAccountId!.replaceAll('account_', ''))[
-                                                    'bank_address']),
-                                      ] else if (_selectedAccountType == 'crypto_wallet') ...[
-                                        _buildDetailRow(
-                                            'Wallet Name',
-                                            _adminAccounts
-                                                .firstWhere((a) =>
-                                                    a['id'].toString() ==
-                                                    _selectedAdminAccountId!.replaceAll('account_', ''))[
-                                                    'wallet_name']),
-                                        _buildDetailRow(
-                                            'Wallet Address',
-                                            _adminAccounts
-                                                .firstWhere((a) =>
-                                                    a['id'].toString() ==
-                                                    _selectedAdminAccountId!.replaceAll('account_', ''))[
-                                                    'wallet_address']),
-                                        _buildDetailRow(
-                                            'Network',
-                                            _adminAccounts
-                                                .firstWhere((a) =>
-                                                    a['id'].toString() ==
-                                                    _selectedAdminAccountId!.replaceAll('account_', ''))[
-                                                    'wallet_network']),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                            const SizedBox(height: 16),
-                            TextFormField(
-                              controller: _amountController,
-                              decoration: const InputDecoration(
-                                labelText: 'Amount',
-                                border: OutlineInputBorder(),
-                              ),
-                              keyboardType: TextInputType.number,
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Please enter an amount';
-                                }
-                                if (double.tryParse(value) == null) {
-                                  return 'Please enter a valid number';
-                                }
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 16),
-                            ElevatedButton.icon(
-                              onPressed: _pickPaymentProof,
-                              icon: const Icon(Icons.upload_file),
-                              label: Text(_paymentProof == null
-                                  ? 'Upload Payment Proof'
-                                  : 'Change Payment Proof'),
-                            ),
-                            if (_paymentProof != null) ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                _paymentProof!.path.split('/').last,
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            ],
-                            const SizedBox(height: 24),
-                            ElevatedButton(
-                              onPressed: (_isLoading || _paymentProof == null || _selectedAdminAccountId == null) ? null : _submitDeposit,
-                              child: _isLoading
-                                  ? const CircularProgressIndicator()
-                                  : const Text('Submit Deposit Request'),
-                            ),
-                          ],
-                        ],
-                      ),
-                  ],
-                ),
+            _buildDepositTab(),
+            _buildWithdrawTab(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDepositTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Current Balance: \$${_userBalance.toStringAsFixed(2)}',
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
               ),
             ),
-
-            // Withdraw Tab
-            SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Available Balance',
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              '₹${_userBalance.toStringAsFixed(2)}',
-                              style: Theme.of(context).textTheme.headlineMedium,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<String>(
-                      value: _selectedAccountType,
-                      decoration: const InputDecoration(
-                        labelText: 'Account Type',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: const [
-                        DropdownMenuItem(value: 'upi', child: Text('UPI')),
-                        DropdownMenuItem(
-                            value: 'bank_transfer', child: Text('Bank Transfer')),
-                        DropdownMenuItem(
-                            value: 'crypto_wallet', child: Text('Crypto Wallet')),
-                      ],
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedAccountType = value;
-                          _selectedUserAccountId = null;
-                          _isAddingNewAccount = false;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    if (_selectedAccountType != null)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          DropdownButtonFormField<String>(
-                            value: _selectedUserAccountId,
-                            decoration: const InputDecoration(
-                              labelText: 'Select Withdrawal Account',
-                              border: OutlineInputBorder(),
-                            ),
-                            items: [
-                              const DropdownMenuItem(
-                                value: 'new_account',
-                                child: Text('Add New Account'),
-                              ),
-                              ..._userAccounts
-                                  .where((account) =>
-                                      account['account_type'] == _selectedAccountType)
-                                  .map((account) => DropdownMenuItem<String>(
-                                        value: 'account_${account['id']}',
-                                        child: Text(
-                                            account['account_type'] == 'upi'
-                                                ? 'UPI: ${account['upi_id']}'
-                                                : account['account_type'] == 'bank_transfer'
-                                                    ? 'A/C: ${account['account_no']}'
-                                                    : 'Wallet: ${account['wallet_address']}'
-                                        ),
-                                      ))
-                                  .toList(),
-                            ],
-                            onChanged: (value) {
-                              setState(() {
-                                _selectedUserAccountId = value;
-                                _isAddingNewAccount = value == 'new_account';
-                              });
-                            },
-                          ),
-                          const SizedBox(height: 16),
-                          if (_isAddingNewAccount) ...[
-                            TextFormField(
-                              controller: _fullNameController,
-                              decoration: const InputDecoration(
-                                labelText: 'Full Name',
-                                border: OutlineInputBorder(),
-                              ),
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Please enter full name';
-                                }
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 16),
-                            if (_selectedAccountType == 'bank_transfer') ...[
-                              TextFormField(
-                                controller: _bankNameController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Bank Name',
-                                  border: OutlineInputBorder(),
-                                ),
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Please enter bank name';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 16),
-                              TextFormField(
-                                controller: _ifscCodeController,
-                                decoration: const InputDecoration(
-                                  labelText: 'IFSC Code',
-                                  border: OutlineInputBorder(),
-                                ),
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Please enter IFSC code';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 16),
-                              TextFormField(
-                                controller: _accountNoController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Account Number',
-                                  border: OutlineInputBorder(),
-                                ),
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Please enter account number';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 16),
-                              TextFormField(
-                                controller: _bankAddressController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Bank Address',
-                                  border: OutlineInputBorder(),
-                                ),
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Please enter bank address';
-                                  }
-                                  return null;
-                                },
-                              ),
-                            ] else if (_selectedAccountType == 'upi') ...[
-                              TextFormField(
-                                controller: _upiIdController,
-                                decoration: const InputDecoration(
-                                  labelText: 'UPI ID',
-                                  border: OutlineInputBorder(),
-                                ),
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Please enter UPI ID';
-                                  }
-                                  return null;
-                                },
-                              ),
-                            ] else if (_selectedAccountType == 'crypto_wallet') ...[
-                              TextFormField(
-                                controller: _walletAddressController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Wallet Address',
-                                  border: OutlineInputBorder(),
-                                ),
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Please enter wallet address';
-                                  }
-                                  return null;
-                                },
-                              ),
-                            ],
-                            const SizedBox(height: 16),
-                            ElevatedButton(
-                              onPressed: _isLoading ? null : _addNewAccount,
-                              child: _isLoading
-                                  ? const CircularProgressIndicator()
-                                  : const Text('Add Account'),
-                            ),
-                          ] else if (_selectedUserAccountId != null && !_isAddingNewAccount) ...[
-                            TextFormField(
-                              controller: _amountController,
-                              decoration: const InputDecoration(
-                                labelText: 'Amount',
-                                border: OutlineInputBorder(),
-                              ),
-                              keyboardType: TextInputType.number,
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Please enter an amount';
-                                }
-                                final amount = double.tryParse(value);
-                                if (amount == null) {
-                                  return 'Please enter a valid number';
-                                }
-                                if (amount > _userBalance) {
-                                  return 'Amount cannot exceed available balance';
-                                }
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 24),
-                            ElevatedButton(
-                              onPressed: _isLoading ? null : _submitWithdraw,
-                              child: _isLoading
-                                  ? const CircularProgressIndicator()
-                                  : const Text('Submit Withdrawal Request'),
-                            ),
-                          ],
-                        ],
-                      ),
-                  ],
-                ),
+            const SizedBox(height: 24),
+            TextFormField(
+              controller: _amountController,
+              decoration: const InputDecoration(
+                labelText: 'Amount',
+                prefixText: '\$',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.number,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter an amount';
+                }
+                final amount = double.tryParse(value);
+                if (amount == null || amount <= 0) {
+                  return 'Please enter a valid amount';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: _selectedUserAccountId,
+              decoration: const InputDecoration(
+                labelText: 'Select Your Account',
+                border: OutlineInputBorder(),
+              ),
+              items: _userAccounts.map((account) {
+                return DropdownMenuItem(
+                  value: account['id'].toString(),
+                  child: Text(
+                    '${account['bank_name']} - ${account['account_no']}',
+                  ),
+                );
+              }).toList(),
+              onChanged: (value) {
+                setState(() {
+                  _selectedUserAccountId = value;
+                });
+              },
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please select an account';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: _selectedAdminAccountId,
+              decoration: const InputDecoration(
+                labelText: 'Select Admin Account',
+                border: OutlineInputBorder(),
+              ),
+              items: _adminAccounts.map((account) {
+                return DropdownMenuItem(
+                  value: account['id'].toString(),
+                  child: Text(
+                    '${account['bank_name']} - ${account['account_no']}',
+                  ),
+                );
+              }).toList(),
+              onChanged: (value) {
+                setState(() {
+                  _selectedAdminAccountId = value;
+                });
+              },
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please select an admin account';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: _isLoading ? null : _pickPaymentProof,
+              icon: const Icon(Icons.upload_file),
+              label: Text(_paymentProof == null
+                  ? 'Upload Payment Proof'
+                  : 'Change Payment Proof'),
+            ),
+            if (_paymentProof != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Selected file: ${path.basename(_paymentProof!.path)}',
+                style: const TextStyle(color: Colors.green),
+              ),
+            ],
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _submitDeposit,
+                child: _isLoading
+                    ? const CircularProgressIndicator()
+                    : const Text('Submit Deposit'),
               ),
             ),
           ],
@@ -1068,25 +228,293 @@ class _TransactionsPageState extends ConsumerState<TransactionsPage>
     );
   }
 
-  Widget _buildDetailRow(String label, String? value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 100,
-            child: Text(
-              label,
-              style: const TextStyle(fontWeight: FontWeight.bold),
+  Widget _buildWithdrawTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Current Balance: \$${_userBalance.toStringAsFixed(2)}',
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-          ),
-          Expanded(
-            child: Text(value ?? 'N/A'),
-          ),
-        ],
+            const SizedBox(height: 24),
+            TextFormField(
+              controller: _amountController,
+              decoration: const InputDecoration(
+                labelText: 'Amount',
+                prefixText: '\$',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.number,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter an amount';
+                }
+                final amount = double.tryParse(value);
+                if (amount == null || amount <= 0) {
+                  return 'Please enter a valid amount';
+                }
+                if (amount > _userBalance) {
+                  return 'Insufficient balance';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: _selectedUserAccountId,
+              decoration: const InputDecoration(
+                labelText: 'Select Your Account',
+                border: OutlineInputBorder(),
+              ),
+              items: _userAccounts.map((account) {
+                return DropdownMenuItem(
+                  value: account['id'].toString(),
+                  child: Text(
+                    '${account['bank_name']} - ${account['account_no']}',
+                  ),
+                );
+              }).toList(),
+              onChanged: (value) {
+                setState(() {
+                  _selectedUserAccountId = value;
+                });
+              },
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please select an account';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: _selectedAdminAccountId,
+              decoration: const InputDecoration(
+                labelText: 'Select Admin Account',
+                border: OutlineInputBorder(),
+              ),
+              items: _adminAccounts.map((account) {
+                return DropdownMenuItem(
+                  value: account['id'].toString(),
+                  child: Text(
+                    '${account['bank_name']} - ${account['account_no']}',
+                  ),
+                );
+              }).toList(),
+              onChanged: (value) {
+                setState(() {
+                  _selectedAdminAccountId = value;
+                });
+              },
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please select an admin account';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _submitWithdraw,
+                child: _isLoading
+                    ? const CircularProgressIndicator()
+                    : const Text('Submit Withdrawal'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  Future<void> _submitDeposit() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (_paymentProof == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please upload payment proof')),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final supabase = Supabase.instance.client;
+      final amount = double.parse(_amountController.text);
+
+      // Upload payment proof
+      final fileExt = path.extension(_paymentProof!.path);
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}$fileExt';
+      final filePath = 'payment_proofs/$fileName';
+
+      await supabase.storage.from('payment_proofs').upload(filePath, _paymentProof!);
+      final paymentProofUrl = supabase.storage.from('payment_proofs').getPublicUrl(filePath);
+
+      // Create deposit transaction
+      await supabase.from('account_transactions').insert({
+        'user_id': supabase.auth.currentUser!.id,
+        'transaction_type': 'deposit',
+        'amount': amount,
+        'payment_proof': paymentProofUrl,
+        'account_info_id': _selectedUserAccountId,
+        'admin_account_info_id': _selectedAdminAccountId,
+        'verified': false,
+      });
+
+      // Reset form
+      _amountController.clear();
+      setState(() {
+        _paymentProof = null;
+        _selectedUserAccountId = null;
+        _selectedAdminAccountId = null;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Deposit request submitted successfully')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error submitting deposit: $e')),
+        );
+      }
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _submitWithdraw() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final supabase = Supabase.instance.client;
+      final amount = double.parse(_amountController.text);
+
+      // Create withdrawal transaction
+      await supabase.from('account_transactions').insert({
+        'user_id': supabase.auth.currentUser!.id,
+        'transaction_type': 'withdraw',
+        'amount': amount,
+        'account_info_id': _selectedUserAccountId,
+        'admin_account_info_id': _selectedAdminAccountId,
+        'verified': false,
+      });
+
+      // Reset form
+      _amountController.clear();
+      setState(() {
+        _selectedUserAccountId = null;
+        _selectedAdminAccountId = null;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Withdrawal request submitted successfully')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error submitting withdrawal: $e')),
+        );
+      }
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _pickPaymentProof() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+
+    if (pickedFile != null) {
+      setState(() {
+        _paymentProof = File(pickedFile.path);
+      });
+    }
+  }
+
+  Future<void> _loadAdminAccounts() async {
+    try {
+      final supabase = Supabase.instance.client;
+      final response = await supabase
+          .from('admin_accounts')
+          .select()
+          .order('created_at', ascending: false);
+
+      setState(() {
+        _adminAccounts = List<Map<String, dynamic>>.from(response);
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading admin accounts: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _loadUserAccounts() async {
+    try {
+      final supabase = Supabase.instance.client;
+      final response = await supabase
+          .from('user_accounts')
+          .select()
+          .eq('user_id', supabase.auth.currentUser!.id)
+          .order('created_at', ascending: false);
+
+      setState(() {
+        _userAccounts = List<Map<String, dynamic>>.from(response);
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading user accounts: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _loadUserBalance() async {
+    try {
+      final supabase = Supabase.instance.client;
+      final response = await supabase
+          .from('account_balances')
+          .select('balance')
+          .eq('user_id', supabase.auth.currentUser!.id)
+          .single();
+
+      setState(() {
+        _userBalance = (response['balance'] as num).toDouble();
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading balance: $e')),
+        );
+      }
+    }
   }
 }
 

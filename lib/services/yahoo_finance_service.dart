@@ -1,4 +1,3 @@
-
 import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -76,9 +75,21 @@ class YahooFinanceService {
       else if (upperSymbol.startsWith('^')) {
         formattedSymbol = symbol;
       }
-      // Finally, check if it's a forex symbol
+      // Then check if it's a forex symbol
       else if (upperSymbol.length == 6 && !upperSymbol.contains('=')) {
         formattedSymbol = '${upperSymbol.substring(0, 3)}${upperSymbol.substring(3)}=X';
+      }
+      // Then check if it's a crypto symbol
+      else if (upperSymbol.contains('_') || upperSymbol.endsWith('USDT') || upperSymbol.endsWith('BTC')) {
+        // Convert crypto symbols to Yahoo Finance format
+        if (upperSymbol.contains('_')) {
+          final parts = upperSymbol.split('_');
+          formattedSymbol = '${parts[0]}-${parts[1]}';
+        } else if (upperSymbol.endsWith('USDT')) {
+          formattedSymbol = '${upperSymbol.substring(0, upperSymbol.length - 4)}-USD';
+        } else if (upperSymbol.endsWith('BTC')) {
+          formattedSymbol = '${upperSymbol.substring(0, upperSymbol.length - 3)}-BTC';
+        }
       }
 
       debugPrint('Fetching data for symbol: $symbol (formatted: $formattedSymbol)');
@@ -98,21 +109,39 @@ class YahooFinanceService {
         final meta = result['meta'];
         final indicators = result['indicators']['quote'][0];
 
+        // Get the last valid price from the quote data
+        double? lastPrice;
+        if (meta['regularMarketPrice'] != null) {
+          lastPrice = meta['regularMarketPrice'].toDouble();
+        } else if (indicators['close'] != null && indicators['close'].isNotEmpty) {
+          // Find the last non-null close price
+          for (int i = indicators['close'].length - 1; i >= 0; i--) {
+            if (indicators['close'][i] != null) {
+              lastPrice = indicators['close'][i].toDouble();
+              break;
+            }
+          }
+        }
+
+        if (lastPrice == null) {
+          debugPrint('No valid price found for symbol: $symbol');
+          return null;
+        }
+
         return MarketData(
           symbol: symbol,
-          lastPrice: meta['regularMarketPrice']?.toDouble() ?? 0.0,
+          lastPrice: lastPrice,
           open: indicators['open']?.last?.toDouble(),
           high: indicators['high']?.last?.toDouble(),
           low: indicators['low']?.last?.toDouble(),
           close: indicators['close']?.last?.toDouble(),
           volume: indicators['volume']?.last?.toDouble() ?? 0.0,
           turnover: 0.0,
-          timestamp: DateTime.now().millisecondsSinceEpoch,
+          timestamp: DateTime.now(),
           type: 'quote',
         );
-      } else {
-        debugPrint('Failed to fetch data for $symbol (formatted: $formattedSymbol). Status code: ${response.statusCode}');
       }
+      debugPrint('Failed to fetch data for $symbol (formatted: $formattedSymbol). Status code: ${response.statusCode}');
     } catch (e) {
       debugPrint('Error fetching Yahoo Finance data for $symbol: $e');
     }

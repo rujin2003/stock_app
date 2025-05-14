@@ -1,6 +1,7 @@
-
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -55,7 +56,9 @@ class WebSocketService {
     _authToken = dotenv.env['ITICK_API_KEY'];
     if (_authToken == null) {
       debugPrint('Error: ITICK_API_KEY not found in environment variables');
+      return;
     }
+    debugPrint('WebSocket Service initialized with API key: ${_authToken!.substring(0, 8)}...');
 
     for (var type in MarketType.values) {
       _connectionStates[type] = ConnectionState.disconnected;
@@ -64,9 +67,17 @@ class WebSocketService {
     }
   }
 
+  String _validateAndFormatUrl(String url) {
+    if (!url.startsWith('wss://') && !url.startsWith('ws://')) {
+      throw Exception('Invalid WebSocket URL: $url - must start with wss:// or ws://');
+    }
+    return url;
+  }
+
   Future<void> connectToMarket(MarketType marketType) async {
     if (_channels[marketType] != null &&
         _connectionStates[marketType] != ConnectionState.disconnected) {
+      debugPrint('Already connected or connecting to ${marketType.toString()}');
       return;
     }
 
@@ -80,29 +91,52 @@ class WebSocketService {
       return;
     }
 
+    debugPrint('Attempting to connect to WebSocket at $wsUrl for ${marketType.toString()}');
+    debugPrint('Current connection state: ${_connectionStates[marketType]}');
+    debugPrint('Reconnect attempt: ${_reconnectAttempts[marketType]}');
+
     try {
-      final channel = WebSocketChannel.connect(Uri.parse(wsUrl));
+      // Validate and format the URL
+      final validatedUrl = _validateAndFormatUrl(wsUrl);
+      final uri = Uri.parse(validatedUrl);
+      debugPrint('Attempting WebSocketChannel.connect with URI: ${uri.toString()}'); // Added log
+      
+      final channel = WebSocketChannel.connect(uri);
       _channels[marketType] = channel;
+      debugPrint('WebSocket channel created for ${marketType.toString()}');
+
+      // Set a connection timeout
+      Timer(const Duration(seconds: 10), () {
+        if (_connectionStates[marketType] == ConnectionState.connecting) {
+          debugPrint('WebSocket connection timeout for ${marketType.toString()}');
+          _handleConnectionFailure(marketType, 'Connection timeout');
+        }
+      });
 
       channel.stream.listen(
         (message) {
+          debugPrint('Received message for ${marketType.toString()}: ${message.toString().substring(0, math.min(100, message.toString().length))}...');
           _handleMessage(message, marketType);
         },
         onError: (error) {
           debugPrint('WebSocket error for ${marketType.toString()}: $error');
-          _handleConnectionFailure(marketType, error);
+          // Check if it's a rate limit error
+          if (error.toString().contains('429')) {
+            _handleRateLimit(marketType);
+          } else {
+            _handleConnectionFailure(marketType, error);
+          }
         },
         onDone: () {
-          debugPrint(
-              'WebSocket connection closed for ${marketType.toString()}');
+          debugPrint('WebSocket connection closed for ${marketType.toString()}');
           _handleConnectionFailure(marketType, 'Connection closed');
         },
       );
 
+      debugPrint('Starting authentication for ${marketType.toString()}');
       _authenticate(marketType);
     } catch (e) {
-      debugPrint(
-          'Error connecting to WebSocket for ${marketType.toString()}: $e');
+      debugPrint('Error connecting to WebSocket for ${marketType.toString()}: $e');
       _handleConnectionFailure(marketType, e);
     }
   }
@@ -112,26 +146,42 @@ class WebSocketService {
     _channels[marketType]?.sink.close();
     _channels[marketType] = null;
 
-    if (_reconnectAttempts[marketType]! <= _maxReconnectAttempts) {
-      int delay;
-      if (marketType == MarketType.forex || marketType == MarketType.indices) {
-        delay = 1000 * (_reconnectAttempts[marketType]! + 1);
-      } else {
-        delay = 1000 * (1 << (_reconnectAttempts[marketType]! - 1));
+    // If we have pending symbols, try to get their data from Yahoo Finance
+    final pendingSymbols = _pendingSymbols[marketType] ?? [];
+    for (final symbol in pendingSymbols) {
+      _getYahooFinanceData(symbol);
+    }
+    _pendingSymbols[marketType]?.clear();
+
+    // Don't attempt reconnection if we're disposed
+    if (_isDisposed) return;
+
+    // Calculate delay with exponential backoff and jitter
+    final baseDelay = 1000; // 1 second base delay
+    final maxDelay = 30000; // 30 seconds max delay
+    final attempt = _reconnectAttempts[marketType] ?? 1;
+    final exponentialDelay = baseDelay * math.pow(2, attempt - 1);
+    final jitter = math.Random().nextInt(1000); // Add up to 1 second of random jitter
+    final delay = math.min(exponentialDelay + jitter, maxDelay).toInt();
+
+    _reconnectTimers[marketType]?.cancel();
+    _reconnectTimers[marketType] = Timer(Duration(milliseconds: delay), () {
+      if (!_isDisposed) {
+        connectToMarket(marketType);
       }
+    });
+  }
 
-      delay = delay > 30000 ? 30000 : delay;
-
-      _reconnectTimers[marketType]?.cancel();
-      _reconnectTimers[marketType] = Timer(Duration(milliseconds: delay), () {
-        if (!_isDisposed) {
-          connectToMarket(marketType);
-        }
-      });
+  Future<void> _getYahooFinanceData(String symbol) async {
+    debugPrint('Attempting to get Yahoo Finance data for $symbol');
+    final yahooData = await _yahooFinanceService.getMarketData(symbol);
+    if (yahooData != null) {
+      _lastMarketData[symbol] = yahooData;
+      if (_symbolStreamControllers.containsKey(symbol)) {
+        _symbolStreamControllers[symbol]!.add(yahooData);
+      }
     } else {
-      debugPrint(
-          'Max reconnection attempts reached for ${marketType.toString()}: $error');
-      _reconnectAttempts[marketType] = 0;
+      debugPrint('Failed to get Yahoo Finance data for $symbol');
     }
   }
 
@@ -143,16 +193,34 @@ class WebSocketService {
     }
 
     final channel = _channels[marketType];
-    if (channel == null) return;
+    if (channel == null) {
+      debugPrint('Cannot authenticate: Channel is null for ${marketType.toString()}');
+      return;
+    }
 
     _connectionStates[marketType] = ConnectionState.authenticating;
+    debugPrint('Sending authentication message for ${marketType.toString()}');
 
     final authMessage = {
       'ac': 'auth',
       'params': _authToken,
     };
 
-    channel.sink.add(jsonEncode(authMessage));
+    // Set an authentication timeout
+    Timer(const Duration(seconds: 5), () {
+      if (_connectionStates[marketType] == ConnectionState.authenticating) {
+        debugPrint('Authentication timeout for ${marketType.toString()}');
+        _handleConnectionFailure(marketType, 'Authentication timeout');
+      }
+    });
+
+    try {
+      channel.sink.add(jsonEncode(authMessage));
+      debugPrint('Authentication message sent for ${marketType.toString()}');
+    } catch (e) {
+      debugPrint('Error sending authentication message: $e');
+      _handleConnectionFailure(marketType, e);
+    }
   }
 
   Future<void> subscribeToSymbol(String symbol, MarketType marketType) async {
@@ -207,62 +275,51 @@ class WebSocketService {
           'WebSocket subscription timeout for $symbol, falling back to Yahoo Finance');
 
       // Try to get data from Yahoo Finance
-      final yahooData = await _yahooFinanceService.getMarketData(symbol);
-      if (yahooData != null) {
-        _lastMarketData[symbol] = yahooData;
-        if (_symbolStreamControllers.containsKey(symbol)) {
-          _symbolStreamControllers[symbol]!.add(yahooData);
-        }
-      } else {
-        // If Yahoo Finance fails, retry the WebSocket subscription
-        debugPrint('Yahoo Finance fallback failed for $symbol, retrying WebSocket subscription');
-        _subscribeToSymbol(symbol, marketType);
-      }
+      await _getYahooFinanceData(symbol);
     });
   }
 
   void _handleMessage(dynamic message, MarketType marketType) {
     try {
       final Map<String, dynamic> data = jsonDecode(message);
+      
+      // Handle authentication response
+      if (data['code'] == 1 && data['msg'] == 'Connected Successfully') {
+        debugPrint('Authentication successful for ${marketType.toString()}');
+        _connectionStates[marketType] = ConnectionState.authenticated;
+        _reconnectAttempts[marketType] = 0;
 
-      if (data['resAc'] == 'auth') {
-        if (data['code'] == 1) {
-          debugPrint('Authentication successful for ${marketType.toString()}');
-          _connectionStates[marketType] = ConnectionState.authenticated;
-          _reconnectAttempts[marketType] = 0;
-
-          final pendingSymbols = _pendingSymbols[marketType] ?? [];
-          for (final symbol in pendingSymbols) {
-            _subscribeToSymbol(symbol, marketType);
-          }
-          _pendingSymbols[marketType]?.clear();
-        } else {
-          debugPrint('Authentication failed: ${data['msg']}');
-          _handleConnectionFailure(marketType, data['msg']);
+        final pendingSymbols = _pendingSymbols[marketType] ?? [];
+        debugPrint('Processing ${pendingSymbols.length} pending symbols after authentication');
+        for (final symbol in pendingSymbols) {
+          _subscribeToSymbol(symbol, marketType);
         }
+        _pendingSymbols[marketType]?.clear();
         return;
       }
 
-      if (data['resAc'] == 'subscribe') {
-        final symbol = data['params'] as String?;
-        if (data['code'] == 1) {
-          debugPrint('Subscription successful: ${data['msg']}');
-          if (symbol != null && _pendingSubscriptions.containsKey(symbol)) {
+      // Handle subscription response
+      if (data['code'] == 1 && data['msg'] == 'Subscribed Successfully') {
+        debugPrint('Received "Subscribed Successfully" message structure: ${jsonEncode(data)}'); 
+        
+        final symbol = data['symbol'] as String?;
+        if (symbol != null) {
+          _subscriptionTimeouts[symbol]?.cancel();
+          _subscriptionTimeouts.remove(symbol);
+          
+          if (_pendingSubscriptions.containsKey(symbol)) {
             _pendingSubscriptions[symbol]?.complete();
             _pendingSubscriptions.remove(symbol);
           }
+          debugPrint('Subscription successful for $symbol. Timeout cancelled.');
         } else {
-          debugPrint('Subscription failed: ${data['msg']}');
-          if (symbol != null && _pendingSubscriptions.containsKey(symbol)) {
-            _pendingSubscriptions[symbol]
-                ?.completeError('Subscription failed: ${data['msg']}');
-            _pendingSubscriptions.remove(symbol);
-          }
+          debugPrint('Warning: "Subscribed Successfully" message received, but "symbol" key not found or null in top-level data. Full message: ${jsonEncode(data)}');
         }
         return;
       }
 
-      if (data['code'] == 1 && data.containsKey('data')) {
+      // Handle market data
+      if (data['code'] == 1 && data['data'] != null) {
         final marketData = MarketData.fromJson(data['data']);
         final symbol = marketData.symbol;
 
@@ -276,7 +333,19 @@ class WebSocketService {
         if (_symbolStreamControllers.containsKey(symbol)) {
           _symbolStreamControllers[symbol]!.add(marketData);
         }
+        return;
       }
+
+      // Handle error messages
+      if (data['code'] != 1) {
+        debugPrint('Error message received: ${data['msg']}');
+        if (data['msg']?.toString().contains('authentication') ?? false) {
+          _handleConnectionFailure(marketType, 'Authentication failed: ${data['msg']}');
+        }
+        return;
+      }
+
+      debugPrint('Unhandled message type for ${marketType.toString()}: ${data['type'] ?? 'unknown'}');
     } catch (e) {
       debugPrint('Error handling WebSocket message: $e');
     }
@@ -380,5 +449,32 @@ class WebSocketService {
 
   MarketData? getLastMarketData(String symbol) {
     return _lastMarketData[symbol];
+  }
+
+  void _handleRateLimit(MarketType marketType) {
+    debugPrint('Rate limit hit for ${marketType.toString()}, implementing exponential backoff');
+    
+    // Calculate exponential backoff delay with jitter
+    final baseDelay = 5000; // 5 seconds base delay
+    final maxDelay = 300000; // 5 minutes max delay
+    // Use the current reconnect attempts count, which connectToMarket would have incremented.
+    final attempt = _reconnectAttempts[marketType] ?? 1; 
+    final exponentialDelay = baseDelay * math.pow(2, attempt - 1);
+    final jitter = math.Random().nextInt(1000); // Add up to 1 second of random jitter
+    final delay = math.min(exponentialDelay + jitter, maxDelay).toInt();
+    
+    debugPrint('Rate limit backoff delay: ${delay}ms for attempt: $attempt');
+    
+    _connectionStates[marketType] = ConnectionState.disconnected;
+    _channels[marketType]?.sink.close();
+    _channels[marketType] = null;
+
+    _reconnectTimers[marketType]?.cancel();
+    _reconnectTimers[marketType] = Timer(Duration(milliseconds: delay), () {
+      if (!_isDisposed) {
+        // DO NOT reset reconnect attempts here. Let it be reset only on successful auth.
+        connectToMarket(marketType); // This will use the incremented attempt number for the next try if it also fails.
+      }
+    });
   }
 }

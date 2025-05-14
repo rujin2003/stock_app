@@ -1,3 +1,6 @@
+import 'package:flutter/foundation.dart';
+
+@immutable
 class MarketData {
   final String symbol;
   final double lastPrice;
@@ -5,43 +8,50 @@ class MarketData {
   final double? high;
   final double? low;
   final double? close;
-  final double volume;
-  final double turnover;
-  final int timestamp;
+  final double? volume;
+  final double? turnover;
+  final DateTime timestamp;
   final String type;
 
-  MarketData({
+  const MarketData({
     required this.symbol,
     required this.lastPrice,
     this.open,
     this.high,
     this.low,
     this.close,
-    required this.volume,
-    required this.turnover,
+    this.volume,
+    this.turnover,
     required this.timestamp,
     required this.type,
   });
 
   factory MarketData.fromJson(Map<String, dynamic> json) {
     // Handle different market data formats
-    final type = json['type']?.toString().toLowerCase() ?? '';
+    final type = json['type']?.toString().toLowerCase() ?? 'quote';
     
     // Common fields across all market types
-    final symbol = json['s'] ?? json['symbol'] ?? '';
-    final lastPrice = (json['ld'] ?? json['last'] ?? json['c'] ?? 0.0).toDouble();
-    final volume = (json['v'] ?? json['volume'] ?? 0.0).toDouble();
-    final turnover = (json['tu'] ?? 0.0).toDouble();
-    final timestamp = json['t'] ?? json['timestamp'] ?? DateTime.now().millisecondsSinceEpoch;
-
-    // Market type specific fields
-    double? open, high, low, close;
+    final symbol = json['symbol'] as String? ?? json['s'] as String? ?? '';
+    final lastPrice = (json['lastPrice'] ?? json['price'] ?? json['c'] ?? json['ld'] ?? 0.0).toDouble();
     
-    // Parse according to iTick.org WebSocket API format
-    open = json['o'] != null ? (json['o']).toDouble() : null;
-    high = json['h'] != null ? (json['h']).toDouble() : null;
-    low = json['l'] != null ? (json['l']).toDouble() : null;
-    close = json['c'] != null ? (json['c']).toDouble() : null;
+    // Optional fields with null safety
+    final open = json['open'] != null ? (json['open'] as num).toDouble() : 
+                json['o'] != null ? (json['o'] as num).toDouble() : null;
+    final high = json['high'] != null ? (json['high'] as num).toDouble() :
+                json['h'] != null ? (json['h'] as num).toDouble() : null;
+    final low = json['low'] != null ? (json['low'] as num).toDouble() :
+               json['l'] != null ? (json['l'] as num).toDouble() : null;
+    final close = json['close'] != null ? (json['close'] as num).toDouble() :
+                 json['c'] != null ? (json['c'] as num).toDouble() : null;
+    final volume = json['volume'] != null ? (json['volume'] as num).toDouble() :
+                  json['v'] != null ? (json['v'] as num).toDouble() : null;
+    final turnover = json['turnover'] != null ? (json['turnover'] as num).toDouble() :
+                    json['tu'] != null ? (json['tu'] as num).toDouble() : null;
+
+    // Handle timestamp
+    final timestamp = DateTime.fromMillisecondsSinceEpoch(
+      (json['timestamp'] ?? json['t'] ?? DateTime.now().millisecondsSinceEpoch).toInt(),
+    );
 
     return MarketData(
       symbol: symbol,
@@ -57,11 +67,32 @@ class MarketData {
     );
   }
 
-  double? get changeAmount => open != null ? lastPrice - open! : null;
+  Map<String, dynamic> toJson() {
+    return {
+      'symbol': symbol,
+      'lastPrice': lastPrice,
+      'open': open,
+      'high': high,
+      'low': low,
+      'close': close,
+      'volume': volume,
+      'turnover': turnover,
+      'timestamp': timestamp.millisecondsSinceEpoch,
+      'type': type,
+    };
+  }
+
+  @override
+  String toString() {
+    return 'MarketData(symbol: $symbol, lastPrice: $lastPrice, volume: $volume, timestamp: $timestamp)';
+  }
+
+  double? get changeAmount => open != null ? lastPrice  : null;
 
   double? get changePercent {
-    if (open != null && open! != 0) {
-      final change = ((lastPrice - open!) / open! * 100);
+    if (open != null && open != 0) {
+      final openValue = open!;
+      final change = ((lastPrice - openValue) / openValue * 100);
       // Return with 2 decimal places precision
       return double.parse(change.toStringAsFixed(2));
     }
@@ -77,7 +108,7 @@ class MarketData {
     double? close,
     double? volume,
     double? turnover,
-    int? timestamp,
+    DateTime? timestamp,
     String? type,
   }) {
     return MarketData(
