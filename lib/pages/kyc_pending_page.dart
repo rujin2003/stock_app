@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stock_app/providers/auth_state_provider.dart';
+import 'package:stock_app/providers/kyc_status_provider.dart';
 
 class KycPendingPage extends ConsumerWidget {
   const KycPendingPage({super.key});
@@ -32,17 +33,40 @@ class KycPendingPage extends ConsumerWidget {
                 style: Theme.of(context).textTheme.bodyLarge,
                 textAlign: TextAlign.center,
               ),
+              const SizedBox(height: 8),
+              Text(
+                'You will be automatically redirected once your verification is complete.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.secondary,
+                ),
+                textAlign: TextAlign.center,
+              ),
               const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: () async {
-                  // Sign out the user
-                  await ref.read(authStateNotifierProvider.notifier).signOut();
-                  // Navigate back to sign in
-                  if (context.mounted) {
-                    context.go('/');
-                  }
-                },
-                child: const Text('Back to Sign In'),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  FilledButton.icon(
+                    onPressed: () {
+                      // Refresh KYC status
+                      ref.invalidate(kycStatusProvider);
+                    },
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Check Status'),
+                  ),
+                  const SizedBox(width: 16),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      // Sign out the user
+                      await ref.read(authStateNotifierProvider.notifier).signOut();
+                      // Navigate back to sign in
+                      if (context.mounted) {
+                        context.go('/');
+                      }
+                    },
+                    icon: const Icon(Icons.logout),
+                    label: const Text('Sign Out'),
+                  ),
+                ],
               ),
             ],
           ),

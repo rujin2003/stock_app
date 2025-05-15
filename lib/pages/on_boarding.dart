@@ -327,7 +327,7 @@ class _OnBoardingState extends ConsumerState<OnBoarding> {
 
       // Navigate to KYC verification status page using GoRouter
       if (mounted) {
-        context.go('/kyc_verification_status');
+        context.go('/kyc-pending');
       }
     } catch (e) {
       setState(() {

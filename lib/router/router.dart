@@ -60,14 +60,18 @@ final routerProvider = Provider<GoRouter>((ref) {
               }
               
               // If user exists, check KYC status
-              if (exists && path != '/kyc-pending') {
+              if (exists) {
                 final kycStatusAsync = ref.watch(kycStatusProvider);
                 
                 return kycStatusAsync.when(
                   data: (isKycVerified) {
                     // If KYC is not verified and not already on the KYC pending page, redirect
-                    if (!isKycVerified && path != '/kyc-pending') {
+                    if (!isKycVerified && path != '/kyc-pending' && path != '/onboarding') {
                       return '/kyc-pending';
+                    }
+                    // If KYC is verified and on onboarding or kyc-pending page, redirect to home
+                    if (isKycVerified && (path == '/onboarding' || path == '/kyc-pending')) {
+                      return '/home';
                     }
                     return null;
                   },
