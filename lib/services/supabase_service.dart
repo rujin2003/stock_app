@@ -41,6 +41,21 @@ class SupabaseService {
         .eq('user_id', user.id);
   }
 
+  Future<void> removeSymbolFromWatchlist(String userId, String symbolCode) async {
+    try {
+      await supabase
+          .from('watchlist')
+          .delete()
+          .match({
+            'user_id': userId,
+            'code': symbolCode,
+          });
+    } catch (e) {
+      print('Error removing symbol from watchlist: $e');
+      rethrow;
+    }
+  }
+
   Future<bool> isInWatchlist(String code) async {
     final user = supabase.auth.currentUser;
     if (user == null) return false;

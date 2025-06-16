@@ -112,7 +112,7 @@ class AuthService {
           developer.log('Google Sign In successful', name: 'WebAuthService');
           return response;
         }
-        throw 'OAuth sign in failed';
+        return 'Google Sign In feature is coming soon!';
       } else {
         // Mobile Google Sign In
         final String? clientId = Platform.isIOS 
@@ -121,7 +121,7 @@ class AuthService {
       
 
         if (clientId == null) {
-          throw 'Google Sign In failed: ${Platform.isIOS ? "iOS" : "Android"} client ID not found in environment variables';
+          return 'Google Sign In feature is coming soon!';
         }
 
         final GoogleSignIn googleSignIn = GoogleSignIn(
@@ -129,13 +129,13 @@ class AuthService {
         );
 
         final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
-        if (googleUser == null) throw 'Google Sign In was canceled';
+        if (googleUser == null) return 'Google Sign In feature is coming soon!';
 
         final GoogleSignInAuthentication googleAuth =
             await googleUser.authentication;
 
         if (googleAuth.idToken == null) {
-          throw 'Google Sign In failed: No ID token received';
+          return 'Google Sign In feature is coming soon!';
         }
 
         final response = await _client.auth.signInWithIdToken(
@@ -152,8 +152,13 @@ class AuthService {
         return response;
       }
     } catch (error) {
+<<<<<<< HEAD
       developer.log('currently this feature is not available please login form email and password');
       rethrow;
+=======
+      developer.log('Error during Google Sign In: $error', name: 'AuthService');
+      return 'Google Sign In feature is coming soon!';
+>>>>>>> b6cc820 (type change in edit)
     }
   }
 

@@ -39,14 +39,17 @@ final watchlistProvider = FutureProvider<List<models.Symbol>>((ref) async {
     final result = await supabaseService.getWatchlist();
     return result;
   } catch (e, stack) {
-   print('Watchlist error: $e\n$stack');
+    print('Watchlist error: $e\n$stack');
     rethrow;
   }
 });
 
+<<<<<<< HEAD
 // Add a state provider for managing the watchlist state
 final watchlistStateProvider = StateProvider<List<models.Symbol>>((ref) => []);
 
+=======
+>>>>>>> b6cc820 (type change in edit)
 class SymbolFilter {
   final String type;
   final String region;
@@ -108,13 +111,18 @@ class AllSymbolsNotifier extends StateNotifier<AsyncValue<List<models.Symbol>>> 
 
   Future<void> toggleWatchlist(models.Symbol symbol) async {
     try {
+      final user = _supabaseService.supabase.auth.currentUser;
+      if (user == null) return;
+
       if (symbol.isInWatchlist) {
-        await _supabaseService.removeFromWatchlist(symbol.code);
+        await _supabaseService.removeSymbolFromWatchlist(user.id, symbol.code);
       } else {
         await _supabaseService.addToWatchlist(symbol);
       }
 
-      state = AsyncValue.data(state.value!.map((s) {
+      // Update the state with the new watchlist status
+      final currentState = state.value ?? [];
+      state = AsyncValue.data(currentState.map((s) {
         if (s.code == symbol.code) {
           return models.Symbol(
             code: s.code,
@@ -127,11 +135,53 @@ class AllSymbolsNotifier extends StateNotifier<AsyncValue<List<models.Symbol>>> 
         return s;
       }).toList());
 
-      // Invalidate the watchlist provider to trigger a refresh
-      // ignore: unused_result
-      _ref.refresh(watchlistProvider);
+      // Force refresh the watchlist provider
+      _ref.invalidate(watchlistProvider);
     } catch (e, stack) {
       state = AsyncValue.error(e, stack);
     }
   }
 }
+
+class WatchlistNotifier extends StateNotifier<AsyncValue<List<Symbol>>> {
+  final Ref _ref;
+  final SupabaseService _supabaseService;
+
+  WatchlistNotifier(this._ref)
+      : _supabaseService = SupabaseService(),
+        super(const AsyncValue.loading()) {
+    _loadWatchlist();
+  }
+
+  Future<void> _loadWatchlist() async {
+    try {
+      final result = await _supabaseService.getWatchlist();
+      state = AsyncValue.data(result);
+    } catch (e, stack) {
+      state = AsyncValue.error(e, stack);
+    }
+  }
+
+  Future<void> removeSymbol(String symbolCode) async {
+    try {
+      final user = _supabaseService.supabase.auth.currentUser;
+      if (user == null) return;
+
+      await _supabaseService.removeSymbolFromWatchlist(user.id, symbolCode);
+      
+      // Update state immediately
+      state.whenData((symbols) {
+        state = AsyncValue.data(
+          symbols.where((s) => s.code != symbolCode).toList(),
+        );
+      });
+    } catch (e, stack) {
+      state = AsyncValue.error(e, stack);
+    }
+  }
+}
+
+final watchlistNotifierProvider =
+    StateNotifierProvider<WatchlistNotifier, AsyncValue<List<Symbol>>>((ref) {
+  return WatchlistNotifier(ref);
+});

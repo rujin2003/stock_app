@@ -397,14 +397,15 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
         actions: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8.0),
-            child: Center(
+          child: Center(
               child: TimeFilterDropdown(),
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.add),
-            tooltip: 'Deposit Funds',
-            onPressed: () => _showDepositDialog(context),
+             onPressed: () {
+          context.go('/transactions');
+        },
+        icon: const Icon(Icons.attach_money,color: Colors.lightGreen,size: 30,),
           ),
         ],
         bottom: TabBar(
@@ -418,12 +419,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
           indicatorColor: theme.colorScheme.primary,
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          context.go('/transactions');
-        },
-        child: const Icon(Icons.add),
-      ),
+   
       body: Column(
         children: [
           // Time filter information

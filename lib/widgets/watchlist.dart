@@ -4,13 +4,14 @@ import 'package:gap/gap.dart';
 import '../providers/symbol_provider.dart';
 import 'symbol_search.dart';
 import 'market_data_tile.dart';
+import '../services/supabase_service.dart';
 
 class Watchlist extends ConsumerWidget {
   const Watchlist({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final watchlist = ref.watch(watchlistProvider);
+    final watchlist = ref.watch(watchlistNotifierProvider);
     final theme = Theme.of(context);
 
     return Column(
@@ -110,7 +111,71 @@ class Watchlist extends ConsumerWidget {
                 itemCount: data.length,
                 itemBuilder: (context, index) {
                   final symbol = data[index];
+<<<<<<< HEAD
                   return  MarketDataTile(symbol: symbol);
+=======
+                  return Dismissible(
+                    key: Key(symbol.code),
+                    direction: DismissDirection.endToStart,
+                    background: Container(
+                      color: Colors.red,
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.only(right: 16.0),
+                      child: const Icon(
+                        Icons.delete,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                    ),
+                    onDismissed: (direction) async {
+                      try {
+                        // Remove from watchlist using the notifier
+                        await ref.read(watchlistNotifierProvider.notifier).removeSymbol(symbol.code);
+                        
+                        // Show a snackbar to confirm deletion
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('${symbol.code} removed from watchlist'),
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Error removing ${symbol.code}: $e'),
+                              backgroundColor: Colors.red,
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      }
+                    },
+                    confirmDismiss: (direction) async {
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('Remove from Watchlist'),
+                          content: Text('Are you sure you want to remove ${symbol.code} from your watchlist?'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(false),
+                              child: const Text('Cancel'),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(true),
+                              child: const Text('Remove'),
+                            ),
+                          ],
+                        ),
+                      );
+                      return confirmed ?? false;
+                    },
+                    child: MarketDataTile(symbol: symbol),
+                  );
+>>>>>>> b6cc820 (type change in edit)
                 },
               );
             },
