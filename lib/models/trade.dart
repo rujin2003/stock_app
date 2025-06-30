@@ -77,7 +77,22 @@ class Trade {
     final pipValue = positionValue / 10000; // Assuming 1 pip = 0.0001 for most forex pairs
     final profitInPips = priceDifference / 0.0001;
     
-    return profitInPips * pipValue * leverage;
+    // Calculate raw profit
+    final rawProfit = profitInPips * pipValue * leverage;
+    
+    // Ensure the profit stays within database limits (precision 18, scale 8)
+    // The maximum value should be less than 10^10
+    final maxValue = 9999999999.99999999; // 10^10 - 0.00000001
+    final minValue = -maxValue;
+    
+    // First check if we're within bounds
+    if (rawProfit > maxValue) return maxValue;
+    if (rawProfit < minValue) return minValue;
+    
+    // Format to exactly 8 decimal places and parse back to double
+    // This ensures we don't exceed the scale of 8
+    final formattedProfit = rawProfit.toStringAsFixed(8);
+    return double.parse(formattedProfit);
   }
 
   // Calculate required margin

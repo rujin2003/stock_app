@@ -43,10 +43,24 @@ class TimeFilterDropdown extends ConsumerWidget {
         ),
         _buildMenuItem(
           context,
-          TimeFilterOption.last3Months,
+          TimeFilterOption.lastThreeMonths,
           'Last 3 Months',
           Icons.calendar_today,
-          timeFilter.option == TimeFilterOption.last3Months,
+          timeFilter.option == TimeFilterOption.lastThreeMonths,
+        ),
+        _buildMenuItem(
+          context,
+          TimeFilterOption.lastYear,
+          'Last Year',
+          Icons.calendar_view_month,
+          timeFilter.option == TimeFilterOption.lastYear,
+        ),
+        _buildMenuItem(
+          context,
+          TimeFilterOption.allTime,
+          'All Time',
+          Icons.all_inclusive,
+          timeFilter.option == TimeFilterOption.allTime,
         ),
         const PopupMenuDivider(),
         _buildMenuItem(
@@ -125,7 +139,6 @@ class TimeFilterDropdown extends ConsumerWidget {
             start: DateTime.now().subtract(const Duration(days: 30)),
             end: DateTime.now(),
           );
-
     final pickedDateRange = await showDateRangePicker(
       context: context,
       initialDateRange: initialDateRange,

@@ -1,10 +1,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/trade.dart';
 import '../services/trade_service.dart';
+import '../services/web_socket_service.dart';
+import 'web_socket_provider.dart';
 
 // Provider for the TradeService
 final tradeServiceProvider = Provider<TradeService>((ref) {
-  return TradeService();
+  final webSocketService = ref.watch(webSocketServiceProvider);
+  return TradeService(webSocketService);
 });
 
 // Provider for all trades with real-time updates

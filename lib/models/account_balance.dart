@@ -65,7 +65,6 @@ class AccountBalance {
 }
 
 class Transaction {
-  // Changed from UUID to a 10-digit numeric ID stored as String for compatibility
   final String id;
   final String userId;
   final TransactionType type;
@@ -73,6 +72,14 @@ class Transaction {
   final String? description;
   final String? relatedTradeId;
   final DateTime createdAt;
+  final bool verified;
+  final String? verifiedBy;
+  final DateTime? verifiedTime;
+  final String? paymentProof;
+  final double? userCurrentBalance;
+  final String? accountBalanceId;
+  final String? accountInfoId;
+  final String? adminAccountInfoId;
 
   Transaction({
     required this.id,
@@ -82,12 +89,19 @@ class Transaction {
     this.description,
     this.relatedTradeId,
     required this.createdAt,
+    this.verified = false,
+    this.verifiedBy,
+    this.verifiedTime,
+    this.paymentProof,
+    this.userCurrentBalance,
+    this.accountBalanceId,
+    this.accountInfoId,
+    this.adminAccountInfoId,
   });
 
   // Create from JSON from database
   factory Transaction.fromJson(Map<String, dynamic> json) {
     return Transaction(
-      // For backward compatibility, handle both string and integer IDs
       id: json['id'].toString(),
       userId: json['user_id'],
       type: TransactionType.values.firstWhere(
@@ -95,9 +109,16 @@ class Transaction {
       ),
       amount: json['amount'].toDouble(),
       description: json['description'],
-      // Handle relatedTradeId as string (could be null, integer, or string)
       relatedTradeId: json['related_trade_id']?.toString(),
       createdAt: DateTime.parse(json['created_at']),
+      verified: json['verified'] ?? false,
+      verifiedBy: json['verified_by'],
+      verifiedTime: json['verified_time'] != null ? DateTime.parse(json['verified_time']) : null,
+      paymentProof: json['payment_proof'],
+      userCurrentBalance: json['user_current_balance']?.toDouble(),
+      accountBalanceId: json['account_balance_id'],
+      accountInfoId: json['account_info_id'],
+      adminAccountInfoId: json['admin_account_info_id'],
     );
   }
 
@@ -111,6 +132,14 @@ class Transaction {
       'description': description,
       'related_trade_id': relatedTradeId,
       'created_at': createdAt.toIso8601String(),
+      'verified': verified,
+      'verified_by': verifiedBy,
+      'verified_time': verifiedTime?.toIso8601String(),
+      'payment_proof': paymentProof,
+      'user_current_balance': userCurrentBalance,
+      'account_balance_id': accountBalanceId,
+      'account_info_id': accountInfoId,
+      'admin_account_info_id': adminAccountInfoId,
     };
   }
 
@@ -166,9 +195,36 @@ class Transaction {
       case TransactionType.credit:
         return 'Credit';
       case TransactionType.fee:
-        return 'Fee';
+        return 'Trade Fee';
       case TransactionType.adjustment:
         return 'Adjustment';
     }
+  }
+
+  // Get formatted amount with sign
+  String getFormattedAmount() {
+    final sign = type == TransactionType.deposit || 
+                type == TransactionType.profit || 
+                type == TransactionType.credit ? '+' : '-';
+    return '$sign\$${amount.toStringAsFixed(2)}';
+  }
+
+  // Get detailed description
+  String getDetailedDescription() {
+    if (type == TransactionType.fee && description != null) {
+      return description!;
+    }
+    return description ?? getTypeDisplayName();
+  }
+
+  // Get verification status display
+  String getVerificationStatus() {
+    if (!verified) return 'Pending';
+    return 'Verified';
+  }
+
+  // Get verification status color
+  Color getVerificationStatusColor() {
+    return verified ? Colors.green : Colors.orange;
   }
 }

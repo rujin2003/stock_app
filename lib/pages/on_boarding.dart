@@ -75,14 +75,13 @@ class _OnBoardingState extends ConsumerState<OnBoarding> {
   
   // Country codes map
   final Map<String, String> countryCodes = {
-    'India': '+91',
-    'USA': '+1',
-    'Canada': '+1',
-    'UK': '+44',
-    'Australia': '+61',
-    'Germany': '+49',
-    'France': '+33',
-    'Japan': '+81',
+    'India': '91',
+    'UAE': '971',
+    'USA': '1',
+    'France': '33',
+    'UK': '44',
+    'Australia': '61',
+    'Germany': '49'
   };
 
   @override
@@ -268,8 +267,8 @@ class _OnBoardingState extends ConsumerState<OnBoarding> {
         'document2_type': selectedDocumentType2,
         'is_kyc_verified': false,
         'registration_date': DateTime.now().toIso8601String(),
-        'account_balance': existingBalance?['balance'] ?? 0, // Use existing balance if available
-        'active_trades': 0, // Set initial active trades to 0
+        'account_balance': existingBalance?['balance'] ?? 0,
+        'active_trades': 0,
       };
 
       // Upload documents if selected
@@ -278,12 +277,10 @@ class _OnBoardingState extends ConsumerState<OnBoarding> {
         final fileName = '${userId}_doc1_${DateTime.now().millisecondsSinceEpoch}.$fileExt';
         final filePath = 'user_documents/$fileName';
         
-        // Upload to userkycdoc bucket
         await supabaseClient.storage
             .from('userkycdoc')
             .upload(filePath, documentFile1!);
             
-        // Add document URL to userData
         userData['document1'] = "https://vlppfasnfmxqbyijcjyx.supabase.co/storage/v1/object/public/userkycdoc/$filePath";
       }
       
@@ -292,12 +289,10 @@ class _OnBoardingState extends ConsumerState<OnBoarding> {
         final fileName = '${userId}_doc2_${DateTime.now().millisecondsSinceEpoch}.$fileExt';
         final filePath = 'user_documents/$fileName';
         
-        // Upload to userkycdoc bucket
         await supabaseClient.storage
             .from('userkycdoc')
             .upload(filePath, documentFile2!);
             
-        // Add document URL to userData
         userData['document2'] = "https://vlppfasnfmxqbyijcjyx.supabase.co/storage/v1/object/public/userkycdoc/$filePath";
       }
 
@@ -325,10 +320,31 @@ class _OnBoardingState extends ConsumerState<OnBoarding> {
         await sendEmailToBackend(userEmail, userData);
       }
 
-      // Navigate to KYC verification status page using GoRouter
+      // Sign out the user
+      await ref.read(authStateNotifierProvider.notifier).signOut();
+
+      // Show success message using ScaffoldMessenger
       if (mounted) {
-        context.go('/kyc-pending');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              "KYC submitted successfully. You will be verified within 2-3 business days.",
+              style: TextStyle(color: Colors.white),
+            ),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+            margin: EdgeInsets.all(16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
+
+        // Navigate to login page
+        context.go('/');
       }
+
     } catch (e) {
       setState(() {
         errorMessage = 'Error submitting KYC: ${e.toString()}';
@@ -607,9 +623,9 @@ class _OnBoardingState extends ConsumerState<OnBoarding> {
             onTap: () async {
               final date = await showDatePicker(
                 context: context,
-                initialDate: DateTime.now(),
+                initialDate: DateTime.now().subtract(Duration(days: 365 * 18)), // Set initial date to 18 years ago
                 firstDate: DateTime(1900),
-                lastDate: DateTime.now(),
+                lastDate: DateTime.now().subtract(Duration(days: 365 * 18)), // Set last date to 18 years ago
               );
               if (date != null) {
                 setState(() {
@@ -622,6 +638,29 @@ class _OnBoardingState extends ConsumerState<OnBoarding> {
               if (value == null || value.isEmpty) {
                 return 'Please select your date of birth';
               }
+              
+              // Parse the date string
+              final parts = value.split('/');
+              if (parts.length != 3) return 'Invalid date format';
+              
+              final day = int.tryParse(parts[0]);
+              final month = int.tryParse(parts[1]);
+              final year = int.tryParse(parts[2]);
+              
+              if (day == null || month == null || year == null) {
+                return 'Invalid date format';
+              }
+              
+              final birthDate = DateTime(year, month, day);
+              final today = DateTime.now();
+              final age = today.year - birthDate.year - 
+                  (today.month < birthDate.month || 
+                   (today.month == birthDate.month && today.day < birthDate.day) ? 1 : 0);
+              
+              if (age < 18) {
+                return 'You must be at least 18 years old';
+              }
+              
               return null;
             },
           ),
@@ -631,7 +670,7 @@ class _OnBoardingState extends ConsumerState<OnBoarding> {
   }
 
   Widget buildContactDetailsPage() {
-    final countries = ["USA", "Canada", "UK", "Australia", "India", "Germany", "France", "Japan"];
+    final countries = ["UAE", "India", "USA", "France", "UK", "Australia", "Germany"];
     final genders = ["Male", "Female", "Other", "Prefer not to say"];
     
     return SingleChildScrollView(
@@ -670,13 +709,8 @@ class _OnBoardingState extends ConsumerState<OnBoarding> {
             onChanged: (value) {
               setState(() {
                 selectedCountry = value;
-                // If India is selected, add the country code to the mobile number
-                if (value == 'India' && !mobileController.text.startsWith('+91')) {
-                  mobileController.text = '+91 ${mobileController.text}';
-                } else if (value != 'India' && mobileController.text.startsWith('+91 ')) {
-                  // Remove the country code if India is not selected
-                  mobileController.text = mobileController.text.substring(4);
-                }
+                // Reset mobile number when country changes
+                mobileController.clear();
               });
             },
             validator: (value) {
@@ -741,7 +775,7 @@ class _OnBoardingState extends ConsumerState<OnBoarding> {
             decoration: InputDecoration(
               labelText: "Mobile Number",
               border: OutlineInputBorder(),
-              prefixText: selectedCountry == 'India' ? '+91 ' : '+',
+              prefixText: selectedCountry == 'India' ? '+91 ' : selectedCountry == 'UAE' ? '+971 ' : selectedCountry == 'USA' ? '+1 ' : selectedCountry == 'France' ? '+33 ' : selectedCountry == 'UK' ? '+44 ' : selectedCountry == 'Australia' ? '+61 ' : selectedCountry == 'Germany' ? '+49 ' : '',
               helperText: 'Maximum 10 digits',
             ),
             keyboardType: TextInputType.phone,

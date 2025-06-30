@@ -1,10 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/material.dart' show DateTimeRange;
+import 'package:intl/intl.dart';
 
 enum TimeFilterOption {
   today,
   lastWeek,
   lastMonth,
-  last3Months,
+  lastThreeMonths,
+  lastYear,
+  allTime,
   custom,
 }
 
@@ -13,59 +17,66 @@ class TimeFilter {
   final DateTime? startDate;
   final DateTime? endDate;
 
-  TimeFilter({
-    this.option = TimeFilterOption.today,
-    this.startDate,
-    this.endDate,
-  });
+  TimeFilter(this.option, {this.startDate, this.endDate});
+  
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is TimeFilter &&
+        other.option == option &&
+        (other.startDate == null && startDate == null || 
+         other.startDate != null && startDate != null && other.startDate!.isAtSameMomentAs(startDate!)) &&
+        (other.endDate == null && endDate == null || 
+         other.endDate != null && endDate != null && other.endDate!.isAtSameMomentAs(endDate!));
+  }
+  
+  @override
+  int get hashCode => option.hashCode ^ startDate.hashCode ^ endDate.hashCode;
 
-  // Get the actual date range based on the selected option
   DateTimeRange getDateRange() {
     final now = DateTime.now();
+    final startOfDay = DateTime(now.year, now.month, now.day);
 
     switch (option) {
       case TimeFilterOption.today:
-        final today = DateTime(now.year, now.month, now.day);
         return DateTimeRange(
-          start: today,
+          start: startOfDay,
           end: now,
         );
-
       case TimeFilterOption.lastWeek:
-        final weekAgo = now.subtract(const Duration(days: 7));
         return DateTimeRange(
-          start: weekAgo,
+          start: startOfDay.subtract(const Duration(days: 7)),
           end: now,
         );
-
       case TimeFilterOption.lastMonth:
-        final monthAgo = DateTime(now.year, now.month - 1, now.day);
         return DateTimeRange(
-          start: monthAgo,
+          start: startOfDay.subtract(const Duration(days: 30)),
           end: now,
         );
-
-      case TimeFilterOption.last3Months:
-        final threeMonthsAgo = DateTime(now.year, now.month - 3, now.day);
+      case TimeFilterOption.lastThreeMonths:
         return DateTimeRange(
-          start: threeMonthsAgo,
+          start: startOfDay.subtract(const Duration(days: 90)),
           end: now,
         );
-
+      case TimeFilterOption.lastYear:
+        return DateTimeRange(
+          start: startOfDay.subtract(const Duration(days: 365)),
+          end: now,
+        );
+      case TimeFilterOption.allTime:
+        return DateTimeRange(
+          start: DateTime(2000),
+          end: now,
+        );
       case TimeFilterOption.custom:
         if (startDate != null && endDate != null) {
-          return DateTimeRange(
-            start: startDate!,
-            end: endDate!,
-          );
-        } else {
-          // Default to last month if custom dates are not set
-          final monthAgo = DateTime(now.year, now.month - 1, now.day);
-          return DateTimeRange(
-            start: monthAgo,
-            end: now,
-          );
+          return DateTimeRange(start: startDate!, end: endDate!);
         }
+        // Default to last month if custom dates not set
+        return DateTimeRange(
+          start: startOfDay.subtract(const Duration(days: 30)),
+          end: now,
+        );
     }
   }
 
@@ -78,24 +89,27 @@ class TimeFilter {
         return 'Last Week';
       case TimeFilterOption.lastMonth:
         return 'Last Month';
-      case TimeFilterOption.last3Months:
+      case TimeFilterOption.lastThreeMonths:
         return 'Last 3 Months';
+      case TimeFilterOption.lastYear:
+        return 'Last Year';
+      case TimeFilterOption.allTime:
+        return 'All Time';
       case TimeFilterOption.custom:
         if (startDate != null && endDate != null) {
-          return 'Custom Period';
-        } else {
-          return 'Custom Period';
+          return '${DateFormat('MMM d').format(startDate!)} - ${DateFormat('MMM d').format(endDate!)}';
         }
+        return 'Custom Period';
     }
   }
 
   TimeFilter copyWith({
-    TimeFilterOption? option,
+    TimeFilterOption? newOption,
     DateTime? startDate,
     DateTime? endDate,
   }) {
     return TimeFilter(
-      option: option ?? this.option,
+      newOption ?? option,
       startDate: startDate ?? this.startDate,
       endDate: endDate ?? this.endDate,
     );
@@ -116,24 +130,39 @@ class DateTimeRange {
     return date.isAfter(start) &&
         date.isBefore(end.add(const Duration(days: 1)));
   }
+
+  @override
+  String toString() {
+    return 'DateTimeRange(start: ${start.toIso8601String()}, end: ${end.toIso8601String()})';
+  }
+  
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is DateTimeRange &&
+        other.start.isAtSameMomentAs(start) &&
+        other.end.isAtSameMomentAs(end);
+  }
+  
+  @override
+  int get hashCode => start.hashCode ^ end.hashCode;
 }
 
 // Provider for time filter
-final timeFilterProvider =
-    StateNotifierProvider<TimeFilterNotifier, TimeFilter>((ref) {
+final timeFilterProvider = StateNotifierProvider<TimeFilterNotifier, TimeFilter>((ref) {
   return TimeFilterNotifier();
 });
 
 class TimeFilterNotifier extends StateNotifier<TimeFilter> {
-  TimeFilterNotifier() : super(TimeFilter());
+  TimeFilterNotifier() : super(TimeFilter(TimeFilterOption.today));
 
   void setOption(TimeFilterOption option) {
-    state = state.copyWith(option: option);
+    state = state.copyWith(newOption: option);
   }
 
   void setCustomDateRange(DateTime startDate, DateTime endDate) {
     state = state.copyWith(
-      option: TimeFilterOption.custom,
+      newOption: TimeFilterOption.custom,
       startDate: startDate,
       endDate: endDate,
     );

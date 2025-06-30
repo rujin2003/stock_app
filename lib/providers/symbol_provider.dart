@@ -105,12 +105,21 @@ class AllSymbolsNotifier extends StateNotifier<AsyncValue<List<models.Symbol>>> 
       state = AsyncValue.error(e, stack);
     }
   }
+Future<void> removeFromWatchlist(models.Symbol symbol) async {
+    try {
+      await _supabaseService.removeFromWatchlist(symbol.code);
+      state = AsyncValue.data(state.value!.where((s) => s.code != symbol.code).toList());
+    } catch (e, stack) {
+      state = AsyncValue.error(e, stack);
+    }
+  }
 
   Future<void> toggleWatchlist(models.Symbol symbol) async {
     try {
       if (symbol.isInWatchlist) {
         await _supabaseService.removeFromWatchlist(symbol.code);
-      } else {
+      } 
+      else {
         await _supabaseService.addToWatchlist(symbol);
       }
 

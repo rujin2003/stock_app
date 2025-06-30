@@ -1,78 +1,75 @@
 class AdminAccount {
   final String id;
-  final String accountName;
-  final String accountNumber;
+  final String adminEmail;
   final String accountType;
+  final DateTime createdAt;
+  final String? notes;
+  final String? upiQrCodeUrl;
+  final String? upiId;
   final String? bankName;
   final String? ifscCode;
-  final String? upiId;
-  final String? cryptoAddress;
-  final String? cryptoType;
-  final bool isActive;
-  final DateTime createdAt;
-  final DateTime? updatedAt;
+  final String? accountNo;
+  final String? accountHolderName;
+  final String? bankAddress;
+  final String? walletName;
+  final String? walletAddress;
+  final String? walletNetwork;
 
   AdminAccount({
     required this.id,
-    required this.accountName,
-    required this.accountNumber,
+    required this.adminEmail,
     required this.accountType,
+    required this.createdAt,
+    this.notes,
+    this.upiQrCodeUrl,
+    this.upiId,
     this.bankName,
     this.ifscCode,
-    this.upiId,
-    this.cryptoAddress,
-    this.cryptoType,
-    required this.isActive,
-    required this.createdAt,
-    this.updatedAt,
+    this.accountNo,
+    this.accountHolderName,
+    this.bankAddress,
+    this.walletName,
+    this.walletAddress,
+    this.walletNetwork,
   });
 
-  factory AdminAccount.fromJson(Map<String, dynamic>? json) {
-    if (json == null) {
-      return AdminAccount(
-        id: '',
-        accountName: '',
-        accountNumber: '',
-        accountType: 'bank',
-        isActive: true,
-        createdAt: DateTime.now(),
-      );
-    }
-
+  factory AdminAccount.fromJson(Map<String, dynamic> json) {
     return AdminAccount(
-      id: json['id']?.toString() ?? '',
-      accountName: json['account_name']?.toString() ?? '',
-      accountNumber: json['account_number']?.toString() ?? '',
-      accountType: json['account_type']?.toString() ?? 'bank',
-      bankName: json['bank_name']?.toString(),
-      ifscCode: json['ifsc_code']?.toString(),
-      upiId: json['upi_id']?.toString(),
-      cryptoAddress: json['crypto_address']?.toString(),
-      cryptoType: json['crypto_type']?.toString(),
-      isActive: json['is_active'] as bool? ?? true,
-      createdAt: json['created_at'] != null 
-          ? DateTime.tryParse(json['created_at'] as String) ?? DateTime.now()
-          : DateTime.now(),
-      updatedAt: json['updated_at'] != null 
-          ? DateTime.tryParse(json['updated_at'] as String)
-          : null,
+      id: json['id'],
+      adminEmail: json['admin_email'],
+      accountType: json['account_type'],
+      createdAt: DateTime.parse(json['created_at']),
+      notes: json['notes'],
+      upiQrCodeUrl: json['upi_qr_code_url'],
+      upiId: json['upi_id'],
+      bankName: json['bank_name'],
+      ifscCode: json['ifsc_code'],
+      accountNo: json['account_no'],
+      accountHolderName: json['account_holder_name'],
+      bankAddress: json['bank_address'],
+      walletName: json['wallet_name'],
+      walletAddress: json['wallet_address'],
+      walletNetwork: json['wallet_network'],
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'account_name': accountName,
-      'account_number': accountNumber,
+      'admin_email': adminEmail,
       'account_type': accountType,
+      'created_at': createdAt.toIso8601String(),
+      'notes': notes,
+      'upi_qr_code_url': upiQrCodeUrl,
+      'upi_id': upiId,
       'bank_name': bankName,
       'ifsc_code': ifscCode,
-      'upi_id': upiId,
-      'crypto_address': cryptoAddress,
-      'crypto_type': cryptoType,
-      'is_active': isActive,
-      'created_at': createdAt.toIso8601String(),
-      'updated_at': updatedAt?.toIso8601String(),
+      'account_no': accountNo,
+      'account_holder_name': accountHolderName,
+      'bank_address': bankAddress,
+      'wallet_name': walletName,
+      'wallet_address': walletAddress,
+      'wallet_network': walletNetwork,
     };
   }
 } 

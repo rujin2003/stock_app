@@ -1,49 +1,43 @@
 class UserAccount {
   final String id;
   final String userId;
-  final String accountNumber;
-  final String accountName;
-  final String bankName;
-  final String? branchName;
+  final String? bankName;
+  final String? ifscCode;
+  final String? bankAddress;
+  final String? accountNo;
+  final String? fullName;
+  final String accountType;
+  final String? upiId;
+  final String? walletAddress;
   final DateTime createdAt;
-  final DateTime? updatedAt;
 
   UserAccount({
     required this.id,
     required this.userId,
-    required this.accountNumber,
-    required this.accountName,
-    required this.bankName,
-    this.branchName,
+    this.bankName,
+    this.ifscCode,
+    this.bankAddress,
+    this.accountNo,
+    this.fullName,
+    required this.accountType,
+    this.upiId,
+    this.walletAddress,
     required this.createdAt,
-    this.updatedAt,
   });
 
-  factory UserAccount.fromJson(Map<String, dynamic>? json) {
-    if (json == null) {
-      return UserAccount(
-        id: '',
-        userId: '',
-        accountNumber: '',
-        accountName: '',
-        bankName: '',
-        createdAt: DateTime.now(),
-      );
-    }
-
+  factory UserAccount.fromJson(Map<String, dynamic> json) {
     return UserAccount(
-      id: json['id']?.toString() ?? '',
-      userId: json['user_id']?.toString() ?? '',
-      accountNumber: json['account_number']?.toString() ?? '',
-      accountName: json['account_name']?.toString() ?? '',
-      bankName: json['bank_name']?.toString() ?? '',
-      branchName: json['branch_name']?.toString(),
-      createdAt: json['created_at'] != null 
-          ? DateTime.tryParse(json['created_at'] as String) ?? DateTime.now()
-          : DateTime.now(),
-      updatedAt: json['updated_at'] != null 
-          ? DateTime.tryParse(json['updated_at'] as String)
-          : null,
+      id: json['id'],
+      userId: json['user_id'],
+      bankName: json['bank_name'],
+      ifscCode: json['ifsc_code'],
+      bankAddress: json['bank_address'],
+      accountNo: json['account_no'],
+      fullName: json['full_name'],
+      accountType: json['account_type'],
+      upiId: json['upi_id'],
+      walletAddress: json['wallet_address'],
+      createdAt: DateTime.parse(json['created_at']),
     );
   }
 
@@ -51,12 +45,15 @@ class UserAccount {
     return {
       'id': id,
       'user_id': userId,
-      'account_number': accountNumber,
-      'account_name': accountName,
       'bank_name': bankName,
-      'branch_name': branchName,
+      'ifsc_code': ifscCode,
+      'bank_address': bankAddress,
+      'account_no': accountNo,
+      'full_name': fullName,
+      'account_type': accountType,
+      'upi_id': upiId,
+      'wallet_address': walletAddress,
       'created_at': createdAt.toIso8601String(),
-      'updated_at': updatedAt?.toIso8601String(),
     };
   }
 } 

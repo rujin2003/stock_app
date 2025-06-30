@@ -110,7 +110,34 @@ class Watchlist extends ConsumerWidget {
                 itemCount: data.length,
                 itemBuilder: (context, index) {
                   final symbol = data[index];
-                  return  MarketDataTile(symbol: symbol);
+                  return Dismissible(
+                    key: Key(symbol.code),
+                    direction: DismissDirection.endToStart,
+                    background: Container(
+                      color: Colors.red,
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.only(right: 16.0),
+                      child: const Icon(
+                        Icons.delete,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                    ),
+                    onDismissed: (direction) {
+                      ref
+                          .read(allSymbolsProvider.notifier)
+                          .removeFromWatchlist(symbol);
+                    data.remove(symbol);
+                      
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('${symbol.code} removed from watchlist'),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                    child: MarketDataTile(symbol: symbol),
+                  );
                 },
               );
             },

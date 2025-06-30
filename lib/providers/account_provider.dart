@@ -19,8 +19,7 @@ final transactionsProvider =
         (ref, params) async {
   final accountService = ref.watch(accountServiceProvider);
   return accountService.getTransactions(
-    limit: params.limit,
-    offset: params.offset,
+  
   );
 });
 

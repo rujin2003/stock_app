@@ -10,7 +10,7 @@ import '../providers/time_filter_provider.dart';
 import '../widgets/responsive_layout.dart';
 import '../widgets/time_filter_dropdown.dart';
 import 'dart:developer';
-
+import 'dart:async';
 
 // Provider for user equity (balance + unrealized P/L)
 final userEquityProvider = Provider<AsyncValue<double>>((ref) {
@@ -30,49 +30,10 @@ final userEquityProvider = Provider<AsyncValue<double>>((ref) {
   );
 });
 
-// Provider for filtered trades based on time filter
-final filteredTradesProvider = Provider<AsyncValue<List<Trade>>>((ref) {
-  final tradesAsync = ref.watch(tradesProvider);
-  final timeFilter = ref.watch(timeFilterProvider);
-
-  return tradesAsync.when(
-    data: (trades) {
-      log('filteredTradesProvider: Received ${trades.length} total trades');
-      final openTrades = trades.where((t) => t.status == TradeStatus.open).length;
-      final closedTrades = trades.where((t) => t.status == TradeStatus.closed).length;
-      final pendingTrades = trades.where((t) => t.status == TradeStatus.pending).length;
-      log('filteredTradesProvider: Open trades: $openTrades, Closed trades: $closedTrades, Pending trades: $pendingTrades');
-
-      final dateRange = timeFilter.getDateRange();
-      log('filteredTradesProvider: Current time filter range: ${dateRange.start} to ${dateRange.end}');
-
-      // Filter trades based on date range
-      final filteredTrades = trades.where((trade) {
-        // For open trades, use openTime
-        // For closed trades, use closeTime if available, otherwise openTime
-        final dateToCheck =
-            trade.status == TradeStatus.closed && trade.closeTime != null
-                ? trade.closeTime!
-                : trade.openTime;
-
-        final isInRange = dateRange.includes(dateToCheck);
-        if (!isInRange) {
-          log('filteredTradesProvider: Trade ${trade.id} filtered out - date $dateToCheck not in range');
-        }
-        return isInRange;
-      }).toList();
-
-      log('filteredTradesProvider: After date filtering, ${filteredTrades.length} trades remain');
-      final filteredOpenTrades = filteredTrades.where((t) => t.status == TradeStatus.open).length;
-      log('filteredTradesProvider: After filtering, open trades: $filteredOpenTrades');
-
-      return AsyncData(filteredTrades);
-    },
-    loading: () => const AsyncLoading(),
-    error: (error, stack) => AsyncError(error, stack),
-  );
+// Provider for all trades (no filtering)
+final allTradesProvider = Provider<AsyncValue<List<Trade>>>((ref) {
+  return ref.watch(tradesProvider);
 });
-
 
 /// Provider for Total Unrealized P/L from open positions
 final totalProfitLossProvider = Provider<AsyncValue<double>>((ref) {
@@ -83,7 +44,6 @@ final totalProfitLossProvider = Provider<AsyncValue<double>>((ref) {
       final openTrades = trades.where((t) => t.status == TradeStatus.open).toList();
 
       if (openTrades.isEmpty) return const AsyncData(0.0); 
-
 
       double total = 0.0;
       for (final trade in openTrades) {
@@ -159,7 +119,6 @@ final marginLevelProvider = Provider<AsyncValue<String>>((ref) {
   final usedMarginAsync = ref.watch(marginUsedProvider);
 
   return equityAsync.when(
-
     data: (equity) {
       return usedMarginAsync.when(
         data: (usedMargin) {
@@ -184,6 +143,8 @@ class TradePage extends ConsumerStatefulWidget {
 }
 
 class _TradePageState extends ConsumerState<TradePage> {
+  Timer? _lossCheckTimer;
+
   @override
   void initState() {
     super.initState();
@@ -191,18 +152,35 @@ class _TradePageState extends ConsumerState<TradePage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.invalidate(accountBalanceProvider);
     });
+
+    // Start periodic loss checking
+    _lossCheckTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      _checkForExcessiveLoss();
+    });
+  }
+
+  @override
+  void dispose() {
+    _lossCheckTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _checkForExcessiveLoss() async {
+    try {
+      await ref.read(tradeServiceProvider).checkAndHandleExcessiveLoss();
+    } catch (e) {
+      log('Error checking for excessive loss: $e');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final filteredTradesAsync = ref.watch(filteredTradesProvider);
+    final tradesAsync = ref.watch(allTradesProvider);
     final totalProfitLossAsync = ref.watch(totalProfitLossProvider);
     final accountBalanceAsync = ref.watch(accountBalanceProvider);
     final equityAsync = ref.watch(userEquityProvider);
 
-
-   
     return DefaultTabController(
       length: 2,
       child: Scaffold(
@@ -414,15 +392,6 @@ class _TradePageState extends ConsumerState<TradePage> {
               ),
             ],
           ),
-          actions: [
-            // Add time filter dropdown
-            Padding(
-              padding: const EdgeInsets.only(right: 8.0),
-              child: Center(
-                child: TimeFilterDropdown(),
-              ),
-            ),
-          ],
           bottom: TabBar(
             tabs: const [
               Tab(text: 'Open Positions'),
@@ -436,7 +405,7 @@ class _TradePageState extends ConsumerState<TradePage> {
         body: TabBarView(
           children: [
             // Open Positions Tab
-            filteredTradesAsync.when(
+            tradesAsync.when(
               data: (trades) {
                 final openTrades =
                     trades.where((t) => t.status == TradeStatus.open).toList();
@@ -458,7 +427,7 @@ class _TradePageState extends ConsumerState<TradePage> {
             ),
 
             // Pending Orders Tab
-            filteredTradesAsync.when(
+            tradesAsync.when(
               data: (trades) {
                 final pendingTrades = trades
                     .where((t) => t.status == TradeStatus.pending)
@@ -953,6 +922,9 @@ class _MetaTraderStyleTradeCardState
                     profit: profit,
                   );
 
+                  // Invalidate account balance provider to trigger reload
+                  ref.invalidate(accountBalanceProvider);
+
                   // Show success message
                   scaffoldMessenger.showSnackBar(
                     SnackBar(
@@ -1253,6 +1225,9 @@ class _MetaTraderStyleTradeCardState
                     volumeToClose: volumeToClose,
                   );
 
+                  // Invalidate account balance provider to trigger reload
+                  ref.invalidate(accountBalanceProvider);
+
                   // Show success message
                   scaffoldMessenger.showSnackBar(
                     SnackBar(
@@ -1282,6 +1257,7 @@ class _MetaTraderStyleTradeCardState
     });
   }
 }
+
 
 class MetaTraderStylePendingOrderCard extends ConsumerStatefulWidget {
   final Trade trade;

@@ -47,8 +47,11 @@ class WebSocketService {
   final YahooFinanceService _yahooFinanceService = YahooFinanceService();
 
   String? _authToken;
-  static const int _maxReconnectAttempts = 5;
-  static const Duration _initialReconnectDelay = Duration(seconds: 5);
+  final Map<MarketType, Timer?> _heartbeatTimers = {};
+  final Duration _heartbeatInterval = const Duration(seconds: 30);
+  final Duration _connectionTimeout = const Duration(seconds: 10);
+  final Duration _reconnectDelay = const Duration(seconds: 5);
+  final int _maxReconnectAttempts = 5;
 
   bool _isDisposed = false;
 
@@ -64,6 +67,7 @@ class WebSocketService {
       _connectionStates[type] = ConnectionState.disconnected;
       _pendingSymbols[type] = [];
       _reconnectAttempts[type] = 0;
+      _heartbeatTimers[type] = null;
     }
   }
 
@@ -96,17 +100,15 @@ class WebSocketService {
     debugPrint('Reconnect attempt: ${_reconnectAttempts[marketType]}');
 
     try {
-      // Validate and format the URL
       final validatedUrl = _validateAndFormatUrl(wsUrl);
       final uri = Uri.parse(validatedUrl);
-      debugPrint('Attempting WebSocketChannel.connect with URI: ${uri.toString()}'); // Added log
       
       final channel = WebSocketChannel.connect(uri);
       _channels[marketType] = channel;
       debugPrint('WebSocket channel created for ${marketType.toString()}');
 
       // Set a connection timeout
-      Timer(const Duration(seconds: 10), () {
+      Timer(_connectionTimeout, () {
         if (_connectionStates[marketType] == ConnectionState.connecting) {
           debugPrint('WebSocket connection timeout for ${marketType.toString()}');
           _handleConnectionFailure(marketType, 'Connection timeout');
@@ -120,7 +122,6 @@ class WebSocketService {
         },
         onError: (error) {
           debugPrint('WebSocket error for ${marketType.toString()}: $error');
-          // Check if it's a rate limit error
           if (error.toString().contains('429')) {
             _handleRateLimit(marketType);
           } else {
@@ -141,10 +142,105 @@ class WebSocketService {
     }
   }
 
+  void _startHeartbeat(MarketType marketType) {
+    _heartbeatTimers[marketType]?.cancel();
+    _heartbeatTimers[marketType] = Timer.periodic(_heartbeatInterval, (timer) {
+      final channel = _channels[marketType];
+      if (channel != null && _connectionStates[marketType] == ConnectionState.authenticated) {
+        try {
+          channel.sink.add(jsonEncode({'ac': 'ping'}));
+        } catch (e) {
+          debugPrint('Error sending heartbeat for ${marketType.toString()}: $e');
+          _handleConnectionFailure(marketType, 'Heartbeat failed');
+        }
+      }
+    });
+  }
+
+  void _handleMessage(dynamic message, MarketType marketType) {
+    try {
+      final Map<String, dynamic> data = jsonDecode(message);
+      
+      // Handle ping response
+      if (data['ac'] == 'pong') {
+        return;
+      }
+      
+      // Handle authentication response
+      if (data['code'] == 1 && data['msg'] == 'Connected Successfully') {
+        debugPrint('Authentication successful for ${marketType.toString()}');
+        _connectionStates[marketType] = ConnectionState.authenticated;
+        _reconnectAttempts[marketType] = 0;
+        _startHeartbeat(marketType);
+
+        final pendingSymbols = _pendingSymbols[marketType] ?? [];
+        debugPrint('Processing ${pendingSymbols.length} pending symbols after authentication');
+        for (final symbol in pendingSymbols) {
+          _subscribeToSymbol(symbol, marketType);
+        }
+        _pendingSymbols[marketType]?.clear();
+        return;
+      }
+
+      // Handle subscription response
+      if (data['code'] == 1 && data['msg'] == 'Subscribed Successfully') {
+        debugPrint('Received "Subscribed Successfully" message structure: ${jsonEncode(data)}'); 
+        
+        final symbol = data['symbol'] as String?;
+        if (symbol != null) {
+          _subscriptionTimeouts[symbol]?.cancel();
+          _subscriptionTimeouts.remove(symbol);
+          
+          if (_pendingSubscriptions.containsKey(symbol)) {
+            _pendingSubscriptions[symbol]?.complete();
+            _pendingSubscriptions.remove(symbol);
+          }
+          debugPrint('Subscription successful for $symbol. Timeout cancelled.');
+        } else {
+          debugPrint('Warning: "Subscribed Successfully" message received, but "symbol" key not found or null in top-level data. Full message: ${jsonEncode(data)}');
+        }
+        return;
+      }
+
+      // Handle market data
+      if (data['code'] == 1 && data['data'] != null) {
+        final marketData = MarketData.fromJson(data['data']);
+        final symbol = marketData.symbol;
+
+        // Cancel the timeout since we received data
+        _subscriptionTimeouts[symbol]?.cancel();
+        _subscriptionTimeouts.remove(symbol);
+
+        // Store the last market data
+        _lastMarketData[symbol] = marketData;
+
+        if (_symbolStreamControllers.containsKey(symbol)) {
+          _symbolStreamControllers[symbol]!.add(marketData);
+        }
+        return;
+      }
+
+      // Handle error messages
+      if (data['code'] != 1) {
+        debugPrint('Error message received: ${data['msg']}');
+        if (data['msg']?.toString().contains('authentication') ?? false) {
+          _handleConnectionFailure(marketType, 'Authentication failed: ${data['msg']}');
+        }
+        return;
+      }
+
+      debugPrint('Unhandled message type for ${marketType.toString()}: ${data['type'] ?? 'unknown'}');
+    } catch (e) {
+      debugPrint('Error handling WebSocket message: $e');
+    }
+  }
+
   void _handleConnectionFailure(MarketType marketType, dynamic error) {
     _connectionStates[marketType] = ConnectionState.disconnected;
     _channels[marketType]?.sink.close();
     _channels[marketType] = null;
+    _heartbeatTimers[marketType]?.cancel();
+    _heartbeatTimers[marketType] = null;
 
     // If we have pending symbols, try to get their data from Yahoo Finance
     final pendingSymbols = _pendingSymbols[marketType] ?? [];
@@ -157,9 +253,15 @@ class WebSocketService {
     if (_isDisposed) return;
 
     // Calculate delay with exponential backoff and jitter
-    final baseDelay = 1000; // 1 second base delay
+    final baseDelay = _reconnectDelay.inMilliseconds;
     final maxDelay = 30000; // 30 seconds max delay
     final attempt = _reconnectAttempts[marketType] ?? 1;
+    
+    if (attempt > _maxReconnectAttempts) {
+      debugPrint('Max reconnection attempts reached for ${marketType.toString()}');
+      return;
+    }
+    
     final exponentialDelay = baseDelay * math.pow(2, attempt - 1);
     final jitter = math.Random().nextInt(1000); // Add up to 1 second of random jitter
     final delay = math.min(exponentialDelay + jitter, maxDelay).toInt();
@@ -279,84 +381,14 @@ class WebSocketService {
     });
   }
 
-  void _handleMessage(dynamic message, MarketType marketType) {
-    try {
-      final Map<String, dynamic> data = jsonDecode(message);
-      
-      // Handle authentication response
-      if (data['code'] == 1 && data['msg'] == 'Connected Successfully') {
-        debugPrint('Authentication successful for ${marketType.toString()}');
-        _connectionStates[marketType] = ConnectionState.authenticated;
-        _reconnectAttempts[marketType] = 0;
-
-        final pendingSymbols = _pendingSymbols[marketType] ?? [];
-        debugPrint('Processing ${pendingSymbols.length} pending symbols after authentication');
-        for (final symbol in pendingSymbols) {
-          _subscribeToSymbol(symbol, marketType);
-        }
-        _pendingSymbols[marketType]?.clear();
-        return;
-      }
-
-      // Handle subscription response
-      if (data['code'] == 1 && data['msg'] == 'Subscribed Successfully') {
-        debugPrint('Received "Subscribed Successfully" message structure: ${jsonEncode(data)}'); 
-        
-        final symbol = data['symbol'] as String?;
-        if (symbol != null) {
-          _subscriptionTimeouts[symbol]?.cancel();
-          _subscriptionTimeouts.remove(symbol);
-          
-          if (_pendingSubscriptions.containsKey(symbol)) {
-            _pendingSubscriptions[symbol]?.complete();
-            _pendingSubscriptions.remove(symbol);
-          }
-          debugPrint('Subscription successful for $symbol. Timeout cancelled.');
-        } else {
-          debugPrint('Warning: "Subscribed Successfully" message received, but "symbol" key not found or null in top-level data. Full message: ${jsonEncode(data)}');
-        }
-        return;
-      }
-
-      // Handle market data
-      if (data['code'] == 1 && data['data'] != null) {
-        final marketData = MarketData.fromJson(data['data']);
-        final symbol = marketData.symbol;
-
-        // Cancel the timeout since we received data
-        _subscriptionTimeouts[symbol]?.cancel();
-        _subscriptionTimeouts.remove(symbol);
-
-        // Store the last market data
-        _lastMarketData[symbol] = marketData;
-
-        if (_symbolStreamControllers.containsKey(symbol)) {
-          _symbolStreamControllers[symbol]!.add(marketData);
-        }
-        return;
-      }
-
-      // Handle error messages
-      if (data['code'] != 1) {
-        debugPrint('Error message received: ${data['msg']}');
-        if (data['msg']?.toString().contains('authentication') ?? false) {
-          _handleConnectionFailure(marketType, 'Authentication failed: ${data['msg']}');
-        }
-        return;
-      }
-
-      debugPrint('Unhandled message type for ${marketType.toString()}: ${data['type'] ?? 'unknown'}');
-    } catch (e) {
-      debugPrint('Error handling WebSocket message: $e');
-    }
-  }
-
   void dispose() {
     _isDisposed = true;
 
     for (final type in MarketType.values) {
       _reconnectTimers[type]?.cancel();
       _reconnectTimers[type] = null;
+      _heartbeatTimers[type]?.cancel();
+      _heartbeatTimers[type] = null;
       _channels[type]?.sink.close();
       _channels[type] = null;
     }

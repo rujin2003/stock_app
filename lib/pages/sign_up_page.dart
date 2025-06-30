@@ -71,6 +71,14 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
           ),
         );
 
+        // Show verification email sent message
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Verification email has been sent to your email."),
+            backgroundColor: Colors.blue,
+          ),
+        );
+
         // Navigate to sign in page
         context.go('/');
 

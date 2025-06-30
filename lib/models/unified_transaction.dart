@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart'; // For DateTimeRange
 
 // Helper to categorize the source of the transaction
@@ -24,40 +23,68 @@ enum UnifiedTransactionCategory {
 class UnifiedTransaction {
   final String id;
   final String userId;
+  final double amount;
+  final String displayType;
+  final String? description;
+  final String? relatedTradeId;
   final DateTime createdAt;
-  final double amount; // Positive for credits to user, negative for debits
-  final String displayType; // User-friendly type string, e.g., "Deposit", "Trade Profit"
   final TransactionSource source;
   final UnifiedTransactionCategory category;
-  final String? originalTypeFromDb; // The raw 'type' or 'transaction_type' from DB
-
-  final String? description;
-
-  // Fields specific to account_transactions (source == TransactionSource.account)
-  final bool? isVerified;
-  final String? paymentProofUrl;
-  final String? notes; // Can be part of description or separate
-  final DateTime? verifiedTime;
-
-  // Fields specific to transactions (source == TransactionSource.system)
-  final String? relatedTradeId;
+  final String? originalTypeFromDb;
+  final String? notes;
 
   UnifiedTransaction({
     required this.id,
     required this.userId,
-    required this.createdAt,
     required this.amount,
     required this.displayType,
+    this.description,
+    this.relatedTradeId,
+    required this.createdAt,
     required this.source,
     required this.category,
     this.originalTypeFromDb,
-    this.description,
-    this.isVerified,
-    this.paymentProofUrl,
     this.notes,
-    this.verifiedTime,
-    this.relatedTradeId,
   });
+
+  factory UnifiedTransaction.fromJson(Map<String, dynamic> json) {
+    return UnifiedTransaction(
+      id: json['id'],
+      userId: json['user_id'],
+      amount: (json['amount'] as num).toDouble(),
+      displayType: json['type'] ?? 'Unknown',
+      description: json['description'],
+      relatedTradeId: json['related_trade_id'],
+      createdAt: DateTime.parse(json['created_at']),
+      source: json['source'] == 'account' ? TransactionSource.account : TransactionSource.system,
+      category: _getCategoryFromType(json['type']),
+      originalTypeFromDb: json['type'],
+      notes: json['notes'],
+    );
+  }
+
+  static UnifiedTransactionCategory _getCategoryFromType(String? type) {
+    if (type == null) return UnifiedTransactionCategory.other;
+    
+    switch (type.toLowerCase()) {
+      case 'profit':
+        return UnifiedTransactionCategory.profit;
+      case 'loss':
+        return UnifiedTransactionCategory.loss;
+      case 'fee':
+        return UnifiedTransactionCategory.fee;
+      case 'commission':
+        return UnifiedTransactionCategory.commission;
+      case 'dividend':
+        return UnifiedTransactionCategory.dividend;
+      case 'interest':
+        return UnifiedTransactionCategory.interest;
+      case 'adjustment':
+        return UnifiedTransactionCategory.adjustment;
+      default:
+        return UnifiedTransactionCategory.other;
+    }
+  }
 
   // Factory constructor for transactions from 'transactions' table
   factory UnifiedTransaction.fromSystemTransaction(Map<String, dynamic> data) {
@@ -99,7 +126,6 @@ class UnifiedTransaction {
     return UnifiedTransaction(
       id: data['id'] as String,
       userId: data['user_id'] as String,
-      createdAt: DateTime.parse(data['created_at'] as String),
       amount: originalAmount,
       displayType: rawType.replaceAll('_', ' ').capitalizeFirstLetter(),
       source: TransactionSource.system,
@@ -107,6 +133,7 @@ class UnifiedTransaction {
       originalTypeFromDb: rawType,
       description: data['description'] as String?,
       relatedTradeId: data['related_trade_id']?.toString(),
+      createdAt: DateTime.parse(data['created_at'] as String),
     );
   }
 
@@ -123,17 +150,14 @@ class UnifiedTransaction {
     return UnifiedTransaction(
       id: data['id'] as String,
       userId: data['user_id'] as String,
-      createdAt: DateTime.parse(data['created_at'] as String),
       amount: amount,
       displayType: rawType.capitalizeFirstLetter(),
       source: TransactionSource.account,
       category: category,
       originalTypeFromDb: rawType,
       description: data['notes'] as String?, // Using 'notes' as primary description
-      isVerified: data['verified'] as bool?,
-      paymentProofUrl: data['payment_proof'] as String?,
-      notes: data['notes'] as String?,
-      verifiedTime: data['verified_time'] == null ? null : DateTime.parse(data['verified_time'] as String),
+      relatedTradeId: data['related_trade_id']?.toString(),
+      createdAt: DateTime.parse(data['created_at'] as String),
     );
   }
 }

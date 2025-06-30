@@ -2,20 +2,19 @@ import 'dart:async';
 import 'dart:developer';
 import 'dart:math' as math;
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/trade.dart';
-import '../models/account_balance.dart';
 import '../services/account_service.dart';
-import '../providers/account_provider.dart';
-import '../providers/trade_provider.dart';
-import '../pages/trade_page.dart';
-import '../pages/history_page.dart' as history;
+import '../services/websocket_service.dart';
+import 'package:uuid/uuid.dart';
 
 class TradeService {
   final SupabaseClient _supabase = Supabase.instance.client;
   final math.Random _random = math.Random();
   final AccountService _accountService = AccountService();
+  final WebSocketService _webSocketService;
+
+  TradeService(this._webSocketService);
 
   // Generate a 10-digit numeric ID
   String _generateNumericId() {
@@ -23,47 +22,128 @@ class TradeService {
     return '10${_random.nextInt(900000000) + 100000000}';
   }
 
+  // Calculate required margin for a trade
+  Future<double> calculateRequiredMargin({
+    required double volume,
+    required double leverage,
+  }) async {
+    // Margin = Volume * $15 (fixed charge per volume unit)
+    return volume * 15;
+  }
+
+  // Check if user has sufficient balance for a trade
+  Future<bool> hasSufficientBalance({
+    required double requiredMargin,
+  }) async {
+    final userId = _supabase.auth.currentUser!.id;
+    
+    final response = await _supabase
+        .from('account_balances')
+        .select('free_margin')
+        .eq('user_id', userId)
+        .single();
+    
+    final freeMargin = response['free_margin'] as double;
+    return freeMargin >= requiredMargin;
+  }
+
+  // Log a transaction
+  Future<void> logTransaction({
+    required String type,
+    required double amount,
+    required String description,
+    String? relatedTradeId,
+  }) async {
+    final userId = _supabase.auth.currentUser!.id;
+    
+    await _supabase.from('transactions').insert({
+      'id': const Uuid().v4(),
+      'user_id': userId,
+      'type': type,
+      'amount': amount,
+      'description': description,
+      'related_trade_id': relatedTradeId,
+    });
+  }
+
+  // Update account balance with proper concurrency handling
+  Future<void> updateAccountBalance({
+    required double amount,
+    required String operation, // 'add' or 'subtract'
+  }) async {
+    final userId = _supabase.auth.currentUser!.id;
+    
+    // First get the current balance
+    final currentBalance = await _supabase
+        .from('account_balances')
+        .select('balance, free_margin')
+        .eq('user_id', userId)
+        .single();
+    
+    final newBalance = operation == 'add' 
+        ? (currentBalance['balance'] as num) + amount
+        : (currentBalance['balance'] as num) - amount;
+    
+    final newFreeMargin = operation == 'add'
+        ? (currentBalance['free_margin'] as num) + amount
+        : (currentBalance['free_margin'] as num) - amount;
+
+    // Update with new values
+    await _supabase
+        .from('account_balances')
+        .update({
+          'balance': newBalance,
+          'free_margin': newFreeMargin,
+          'updated_at': DateTime.now().toIso8601String(),
+        })
+        .eq('user_id', userId);
+  }
+
   // Create a new trade
   Future<Trade> createTrade({
     required String symbolCode,
     required String symbolName,
     required TradeType type,
-    required OrderType orderType,
     required double entryPrice,
-    double? limitPrice,
-    double? stopPrice,
     required double volume,
     required double leverage,
+    OrderType orderType = OrderType.market,
+    double? limitPrice,
+    double? stopPrice,
     double? stopLoss,
     double? takeProfit,
     double? trailingStopLoss,
-    WidgetRef? ref,
   }) async {
+    // Calculate required margin
+    final requiredMargin = await calculateRequiredMargin(
+      volume: volume,
+      leverage: leverage,
+    );
+
+    // Check if user has sufficient balance
+    final hasBalance = await hasSufficientBalance(
+      requiredMargin: requiredMargin,
+    );
+
+    if (!hasBalance) {
+      throw Exception('Insufficient balance to place this trade');
+    }
+
+    // Deduct margin from user's balance
+    await updateAccountBalance(
+      amount: requiredMargin,
+      operation: 'subtract',
+    );
+
+    // Log the margin deduction transaction
+    await logTransaction(
+      type: 'charge',
+      amount: requiredMargin,
+      description: 'Trade Placed - Margin Deduction',
+    );
+
     final userId = _supabase.auth.currentUser!.id;
     final now = DateTime.now();
-
-    // Get current balance
-    final balanceResponse = await _supabase
-        .from('account_balances')
-        .select('balance')
-        .eq('user_id', userId)
-        .single();
-
-    final currentBalance = balanceResponse['balance'].toDouble();
-
-    // Calculate required margin (simplified calculation)
-    final requiredMargin = (entryPrice * volume) / leverage;
-
-    // Calculate platform fee ($15 per lot)
-    final platformFee = volume * 15.0;
-
-    // Total amount to be deducted
-    final totalDeduction = requiredMargin + platformFee;
-
-    // Check if user has enough balance
-    if (currentBalance < totalDeduction) {
-      throw Exception('Insufficient balance. Required: \$${totalDeduction.toStringAsFixed(2)}, Available: \$${currentBalance.toStringAsFixed(2)}');
-    }
 
     // Determine trade status based on order type
     final status =
@@ -88,49 +168,13 @@ class TradeService {
       userId: userId,
     );
 
-    try {
- 
-      final response = await _supabase
-          .from('trades')
-          .insert(trade.toJson())
-          .select()
-          .single();
+    final response =
+        await _supabase.from('trades').insert(trade.toJson()).select().single();
 
-    
-      if (response != null) {
-        // Update account balance
-        await _supabase
-            .from('account_balances')
-            .update({
-              'balance': currentBalance - totalDeduction,
-              'updated_at': now.toIso8601String(),
-            })
-            .eq('user_id', userId);
+    // Update account metrics after opening a trade
+    await _accountService.updateAccountMetrics();
 
-   
-        await _supabase
-            .from('appusers')
-            .update({
-              'account_balance': currentBalance - totalDeduction,
-            })
-            .eq('user_id', userId);
-
-       
-        await _accountService.updateAccountMetrics();
-
-      
-        if (ref != null) {
-         
-          await getTrades();
-          await _accountService.getAccountBalance();
-        }
-      }
-
-      return Trade.fromJson(response);
-    } catch (e) {
-      // If there's an error, rethrow it
-      throw Exception('Failed to create trade: $e');
-    }
+    return Trade.fromJson(response);
   }
 
   // Get all trades for the current user
@@ -218,33 +262,93 @@ class TradeService {
     return response.map((json) => Trade.fromJson(json)).toList();
   }
 
-  // Close a trade
+  // Reload account balance
+  Future<Map<String, dynamic>> reloadAccountBalance() async {
+    final userId = _supabase.auth.currentUser!.id;
+    
+    final response = await _supabase
+        .from('account_balances')
+        .select()
+        .eq('user_id', userId)
+        .single();
+    
+    return response;
+  }
+
+  // Override closeTrade to include profit/loss handling
   Future<Trade> closeTrade({
     required String tradeId,
     required double exitPrice,
     required double profit,
   }) async {
-    final now = DateTime.now();
+    // Get the trade details
+    final tradeJson = await _supabase
+        .from('trades')
+        .select()
+        .eq('id', tradeId)
+        .single();
+    
+    final trade = Trade.fromJson(tradeJson);
 
-    final response = await _supabase
+    // Calculate the actual profit/loss
+    final actualProfit = profit;
+    
+    // Check if user has sufficient balance to absorb loss
+    if (actualProfit < 0) {
+      final userId = _supabase.auth.currentUser!.id;
+      final balance = await _supabase
+          .from('account_balances')
+          .select('free_margin')
+          .eq('user_id', userId)
+          .single();
+      
+      if (balance['free_margin'] < actualProfit.abs()) {
+        throw Exception('Insufficient balance to close this trade');
+      }
+    }
+
+    // Calculate margin to be returned (since trade is closing)
+    final marginToReturn = trade.volume * 15; // $15 per volume unit
+
+    // Update account balance with profit/loss and return margin
+    await updateAccountBalance(
+      amount: actualProfit.abs() + marginToReturn, // Add both profit and returned margin
+      operation: actualProfit >= 0 ? 'add' : 'subtract',
+    );
+
+    // Log the profit/loss transaction
+    await logTransaction(
+      type: actualProfit >= 0 ? 'profit' : 'loss',
+      amount: actualProfit,
+      description: 'Trade Closed - ${actualProfit >= 0 ? 'Profit' : 'Loss'}',
+      relatedTradeId: tradeId,
+    );
+
+    // Log the margin return transaction
+    await logTransaction(
+      type: 'charge',
+      amount: marginToReturn,
+      description: 'Margin Returned - Trade Closed',
+      relatedTradeId: tradeId,
+    );
+
+    // Close the trade
+    final closedTradeJson = await _supabase
         .from('trades')
         .update({
           'exit_price': exitPrice,
-          'close_time': now.toIso8601String(),
+          'close_time': DateTime.now().toIso8601String(),
           'status': 'closed',
-          'profit': profit,
+          'profit': actualProfit,
         })
         .eq('id', tradeId)
         .select()
         .single();
 
-    final closedTrade = Trade.fromJson(response);
+    final closedTrade = Trade.fromJson(closedTradeJson);
 
-    // Process profit/loss and update account balance
-    await _accountService.processTradeProfitLoss(closedTrade);
-
-    // Update account metrics after closing a trade
-    await _accountService.updateAccountMetrics();
+    // Reload account balance after all updates
+    await reloadAccountBalance();
 
     return closedTrade;
   }
@@ -330,68 +434,80 @@ class TradeService {
     await _accountService.updateAccountMetrics();
   }
 
-  // Partial close a trade
+  // Override partialCloseTrade to include profit/loss handling
   Future<Trade> partialCloseTrade({
     required String tradeId,
     required double exitPrice,
     required double volumeToClose,
   }) async {
     // Get the current trade
-    final response =
-        await _supabase.from('trades').select().eq('id', tradeId).single();
-
-    final trade = Trade.fromJson(response);
-
-    // Ensure volumeToClose is less than or equal to the current volume
-    if (volumeToClose > trade.volume) {
-      throw Exception('Volume to close exceeds current trade volume');
-    }
-
-    final now = DateTime.now();
+    final tradeJson = await _supabase
+        .from('trades')
+        .select()
+        .eq('id', tradeId)
+        .single();
+    
+    final trade = Trade.fromJson(tradeJson);
 
     // Calculate the profit for the partial volume
     final profitPerUnit = trade.calculateProfit(exitPrice) / trade.volume;
     final partialProfit = profitPerUnit * volumeToClose;
 
-    // Create a new closed trade record for the partial close
-    final partialTrade = Trade(
-      id: _generateNumericId(),
-      userId: trade.userId,
-      symbolCode: trade.symbolCode,
-      symbolName: trade.symbolName,
-      type: trade.type,
-      orderType: trade.orderType,
-      entryPrice: trade.entryPrice,
-      exitPrice: exitPrice,
-      volume: volumeToClose,
-      leverage: trade.leverage,
-      openTime: trade.openTime,
-      closeTime: now,
-      status: TradeStatus.closed,
-      profit: partialProfit,
+    // Calculate margin to be returned for partial close
+    final marginToReturn = volumeToClose * 15; // $15 per volume unit
+
+    // Check if user has sufficient balance to absorb loss
+    if (partialProfit < 0) {
+      final userId = _supabase.auth.currentUser!.id;
+      final balance = await _supabase
+          .from('account_balances')
+          .select('free_margin')
+          .eq('user_id', userId)
+          .single();
+      
+      if (balance['free_margin'] < partialProfit.abs()) {
+        throw Exception('Insufficient balance to partially close this trade');
+      }
+    }
+
+    // Update account balance with profit/loss and return margin
+    await updateAccountBalance(
+      amount: partialProfit.abs() + marginToReturn, // Add both profit and returned margin
+      operation: partialProfit >= 0 ? 'add' : 'subtract',
     );
 
-    // Insert the partial closed trade
-    await _supabase.from('trades').insert(partialTrade.toJson());
+    // Log the profit/loss transaction
+    await logTransaction(
+      type: partialProfit >= 0 ? 'profit' : 'loss',
+      amount: partialProfit,
+      description: 'Partial Trade Close - ${partialProfit >= 0 ? 'Profit' : 'Loss'}',
+      relatedTradeId: tradeId,
+    );
 
-    // Update the original trade with reduced volume
-    final remainingVolume = trade.volume - volumeToClose;
-    final updatedTrade = await _supabase
+    // Log the margin return transaction
+    await logTransaction(
+      type: 'charge',
+      amount: marginToReturn,
+      description: 'Margin Returned - Partial Trade Close',
+      relatedTradeId: tradeId,
+    );
+
+    // Perform the partial close
+    final updatedTradeJson = await _supabase
         .from('trades')
         .update({
-          'volume': remainingVolume,
+          'volume': trade.volume - volumeToClose,
         })
         .eq('id', tradeId)
         .select()
         .single();
 
-    // Process profit/loss and update account balance
-    await _accountService.processTradeProfitLoss(partialTrade);
+    final updatedTrade = Trade.fromJson(updatedTradeJson);
 
-    // Update account metrics
-    await _accountService.updateAccountMetrics();
+    // Reload account balance after all updates
+    await reloadAccountBalance();
 
-    return Trade.fromJson(updatedTrade);
+    return updatedTrade;
   }
 
   // Check if any open trades need to be closed based on current price
@@ -537,6 +653,74 @@ class TradeService {
       }
     } catch (e) {
       log('Error fetching pending orders for $symbolCode: $e');
+    }
+  }
+
+  // Check if total loss exceeds balance and close trades if necessary
+  Future<void> checkAndHandleExcessiveLoss() async {
+    final userId = _supabase.auth.currentUser!.id;
+    
+    // Get current balance
+    final balanceResponse = await _supabase
+        .from('account_balances')
+        .select('balance')
+        .eq('user_id', userId)
+        .single();
+    
+    final currentBalance = (balanceResponse['balance'] as num).toDouble();
+    
+    // Get all open trades
+    final openTrades = await getOpenTrades();
+    
+    if (openTrades.isEmpty) return;
+    
+    // Calculate total unrealized loss
+    double totalUnrealizedLoss = 0;
+    for (final trade in openTrades) {
+      final marketData = _webSocketService.getLastMarketData(trade.symbolCode);
+      if (marketData != null) {
+        final profit = trade.calculateProfit(marketData.lastPrice);
+        if (profit < 0) {
+          totalUnrealizedLoss += profit.abs();
+        }
+      }
+    }
+    
+    // If total loss exceeds balance, close all trades
+    if (totalUnrealizedLoss >= currentBalance) {
+      for (final trade in openTrades) {
+        try {
+          final marketData = _webSocketService.getLastMarketData(trade.symbolCode);
+          if (marketData != null) {
+            await closeTrade(
+              tradeId: trade.id,
+              exitPrice: marketData.lastPrice,
+              profit: trade.calculateProfit(marketData.lastPrice),
+            );
+          }
+        } catch (e) {
+          log('Error closing trade ${trade.id}: $e');
+        }
+      }
+      
+      // Update account balance to zero
+      await _supabase
+          .from('account_balances')
+          .update({
+            'balance': 0,
+            'equity': 0,
+            'free_margin': 0,
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .eq('user_id', userId);
+          
+      // Update appusers table
+      await _supabase
+          .from('appusers')
+          .update({
+            'account_balance': 0,
+          })
+          .eq('user_id', userId);
     }
   }
 }

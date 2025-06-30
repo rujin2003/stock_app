@@ -6,6 +6,8 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:path/path.dart' as path;
 import 'package:stock_app/pages/transactions/transaction_history_page.dart';
+import 'package:stock_app/models/user_account.dart';
+import 'package:stock_app/models/admin_account.dart';
 
 class TransactionsPage extends ConsumerStatefulWidget {
   const TransactionsPage({super.key});
@@ -62,6 +64,129 @@ class _TransactionsPageState extends ConsumerState<TransactionsPage>
     super.dispose();
   }
 
+  Future<void> _loadAdminAccounts() async {
+    try {
+      final supabase = Supabase.instance.client;
+      if (_selectedAccountType == null) return;
+      
+      final response = await supabase
+          .from('admin_accounts')
+          .select()
+          .eq('account_type', _selectedAccountType!)
+          .order('created_at', ascending: false);
+
+      setState(() {
+        _adminAccounts = List<Map<String, dynamic>>.from(response);
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading admin accounts: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _loadUserAccounts() async {
+    try {
+      final supabase = Supabase.instance.client;
+      if (_selectedAccountType == null) return;
+      
+      final response = await supabase
+          .from('user_accounts')
+          .select()
+          .eq('user_id', supabase.auth.currentUser!.id)
+          .eq('account_type', _selectedAccountType!)
+          .order('created_at', ascending: false);
+
+      setState(() {
+        _userAccounts = List<Map<String, dynamic>>.from(response);
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading user accounts: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _loadUserBalance() async {
+    try {
+      final supabase = Supabase.instance.client;
+      final response = await supabase
+          .from('account_balances')
+          .select()
+          .eq('user_id', supabase.auth.currentUser!.id)
+          .single();
+
+      setState(() {
+        _userBalance = response['balance']?.toDouble() ?? 0.0;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading user balance: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _addNewAccount() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final supabase = Supabase.instance.client;
+      final accountData = {
+        'user_id': supabase.auth.currentUser!.id,
+        'account_type': _selectedAccountType,
+        'bank_name': _bankNameController.text,
+        'ifsc_code': _ifscCodeController.text,
+        'bank_address': _bankAddressController.text,
+        'account_no': _accountNoController.text,
+        'full_name': _fullNameController.text,
+        'upi_id': _upiIdController.text,
+        'wallet_address': _walletAddressController.text,
+      };
+
+      await supabase.from('user_accounts').insert(accountData);
+      await _loadUserAccounts();
+
+      // Reset form
+      _bankNameController.clear();
+      _ifscCodeController.clear();
+      _bankAddressController.clear();
+      _accountNoController.clear();
+      _fullNameController.clear();
+      _upiIdController.clear();
+      _walletAddressController.clear();
+
+      setState(() {
+        _isAddingNewAccount = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Account added successfully')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error adding account: $e')),
+        );
+      }
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
@@ -97,11 +222,16 @@ class _TransactionsPageState extends ConsumerState<TransactionsPage>
             ],
           ),
         ),
-        body: TabBarView(
-          controller: _tabController,
+        body: Stack(
           children: [
-            _buildDepositTab(),
-            _buildWithdrawTab(),
+            TabBarView(
+              controller: _tabController,
+              children: [
+                _buildDepositTab(),
+                _buildWithdrawTab(),
+              ],
+            ),
+            if (_isAddingNewAccount) _buildAddAccountDialog(),
           ],
         ),
       ),
@@ -124,6 +254,133 @@ class _TransactionsPageState extends ConsumerState<TransactionsPage>
               ),
             ),
             const SizedBox(height: 24),
+            // Account Type Selection
+            DropdownButtonFormField<String>(
+              value: _selectedAccountType,
+              decoration: const InputDecoration(
+                labelText: 'Select Account Type',
+                border: OutlineInputBorder(),
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: 'upi',
+                  child: Text('UPI'),
+                ),
+                DropdownMenuItem(
+                  value: 'bank_transfer',
+                  child: Text('Bank Transfer'),
+                ),
+                DropdownMenuItem(
+                  value: 'crypto_wallet',
+                  child: Text('Crypto Wallet'),
+                ),
+              ],
+              onChanged: (value) {
+                setState(() {
+                  _selectedAccountType = value;
+                  _selectedUserAccountId = null;
+                  _selectedAdminAccountId = null;
+                });
+                _loadAdminAccounts();
+                _loadUserAccounts();
+              },
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please select an account type';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            // User Account Selection
+            if (_selectedAccountType != null) ...[
+              if (_userAccounts.isEmpty) ...[
+                ElevatedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _isAddingNewAccount = true;
+                    });
+                  },
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add New Account'),
+                ),
+              ] else ...[
+                DropdownButtonFormField<String>(
+                  value: _selectedUserAccountId,
+                  decoration: const InputDecoration(
+                    labelText: 'Select Your Account',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: _userAccounts.map((account) {
+                    return DropdownMenuItem(
+                      value: account['id'].toString(),
+                      child: Text(
+                        _selectedAccountType == 'upi'
+                            ? account['upi_id'] ?? 'UPI Account'
+                            : _selectedAccountType == 'bank_transfer'
+                                ? '${account['bank_name']} - ${account['account_no']}'
+                                : '${account['wallet_name']} - ${account['wallet_address']}',
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedUserAccountId = value;
+                    });
+                  },
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please select an account';
+                    }
+                    return null;
+                  },
+                ),
+                TextButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _isAddingNewAccount = true;
+                    });
+                  },
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add Another Account'),
+                ),
+              ],
+            ],
+            const SizedBox(height: 16),
+            // Admin Account Selection
+            if (_selectedAccountType != null && _adminAccounts.isNotEmpty)
+              DropdownButtonFormField<String>(
+                value: _selectedAdminAccountId,
+                decoration: const InputDecoration(
+                  labelText: 'Select Admin Account',
+                  border: OutlineInputBorder(),
+                ),
+                items: _adminAccounts.map((account) {
+                  return DropdownMenuItem(
+                    value: account['id'].toString(),
+                    child: Text(
+                      _selectedAccountType == 'upi'
+                          ? account['upi_id'] ?? 'UPI Account'
+                          : _selectedAccountType == 'bank_transfer'
+                              ? '${account['bank_name']} - ${account['account_no']}'
+                              : '${account['wallet_name']} - ${account['wallet_address']}',
+                    ),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _selectedAdminAccountId = value;
+                  });
+                },
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please select an admin account';
+                  }
+                  return null;
+                },
+              ),
+            const SizedBox(height: 16),
+            // Amount Input
             TextFormField(
               controller: _amountController,
               decoration: const InputDecoration(
@@ -144,60 +401,7 @@ class _TransactionsPageState extends ConsumerState<TransactionsPage>
               },
             ),
             const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              value: _selectedUserAccountId,
-              decoration: const InputDecoration(
-                labelText: 'Select Your Account',
-                border: OutlineInputBorder(),
-              ),
-              items: _userAccounts.map((account) {
-                return DropdownMenuItem(
-                  value: account['id'].toString(),
-                  child: Text(
-                    '${account['bank_name']} - ${account['account_no']}',
-                  ),
-                );
-              }).toList(),
-              onChanged: (value) {
-                setState(() {
-                  _selectedUserAccountId = value;
-                });
-              },
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please select an account';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              value: _selectedAdminAccountId,
-              decoration: const InputDecoration(
-                labelText: 'Select Admin Account',
-                border: OutlineInputBorder(),
-              ),
-              items: _adminAccounts.map((account) {
-                return DropdownMenuItem(
-                  value: account['id'].toString(),
-                  child: Text(
-                    '${account['bank_name']} - ${account['account_no']}',
-                  ),
-                );
-              }).toList(),
-              onChanged: (value) {
-                setState(() {
-                  _selectedAdminAccountId = value;
-                });
-              },
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please select an admin account';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
+            // Payment Proof Upload
             ElevatedButton.icon(
               onPressed: _isLoading ? null : _pickPaymentProof,
               icon: const Icon(Icons.upload_file),
@@ -213,6 +417,7 @@ class _TransactionsPageState extends ConsumerState<TransactionsPage>
               ),
             ],
             const SizedBox(height: 24),
+            // Submit Button
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
@@ -244,6 +449,100 @@ class _TransactionsPageState extends ConsumerState<TransactionsPage>
               ),
             ),
             const SizedBox(height: 24),
+            // Account Type Selection
+            DropdownButtonFormField<String>(
+              value: _selectedAccountType,
+              decoration: const InputDecoration(
+                labelText: 'Select Account Type',
+                border: OutlineInputBorder(),
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: 'upi',
+                  child: Text('UPI'),
+                ),
+                DropdownMenuItem(
+                  value: 'bank_transfer',
+                  child: Text('Bank Transfer'),
+                ),
+                DropdownMenuItem(
+                  value: 'crypto_wallet',
+                  child: Text('Crypto Wallet'),
+                ),
+              ],
+              onChanged: (value) {
+                setState(() {
+                  _selectedAccountType = value;
+                  _selectedUserAccountId = null;
+                  _selectedAdminAccountId = null;
+                });
+                _loadAdminAccounts();
+                _loadUserAccounts();
+              },
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please select an account type';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            // User Account Selection
+            if (_selectedAccountType != null) ...[
+              if (_userAccounts.isEmpty) ...[
+                ElevatedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _isAddingNewAccount = true;
+                    });
+                  },
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add New Account'),
+                ),
+              ] else ...[
+                DropdownButtonFormField<String>(
+                  value: _selectedUserAccountId,
+                  decoration: const InputDecoration(
+                    labelText: 'Select Your Account',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: _userAccounts.map((account) {
+                    return DropdownMenuItem(
+                      value: account['id'].toString(),
+                      child: Text(
+                        _selectedAccountType == 'upi'
+                            ? account['upi_id'] ?? 'UPI Account'
+                            : _selectedAccountType == 'bank_transfer'
+                                ? '${account['bank_name']} - ${account['account_no']}'
+                                : '${account['wallet_name']} - ${account['wallet_address']}',
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedUserAccountId = value;
+                    });
+                  },
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please select an account';
+                    }
+                    return null;
+                  },
+                ),
+                TextButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _isAddingNewAccount = true;
+                    });
+                  },
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add Another Account'),
+                ),
+              ],
+            ],
+            const SizedBox(height: 16),
+            // Amount Input
             TextFormField(
               controller: _amountController,
               decoration: const InputDecoration(
@@ -266,61 +565,8 @@ class _TransactionsPageState extends ConsumerState<TransactionsPage>
                 return null;
               },
             ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              value: _selectedUserAccountId,
-              decoration: const InputDecoration(
-                labelText: 'Select Your Account',
-                border: OutlineInputBorder(),
-              ),
-              items: _userAccounts.map((account) {
-                return DropdownMenuItem(
-                  value: account['id'].toString(),
-                  child: Text(
-                    '${account['bank_name']} - ${account['account_no']}',
-                  ),
-                );
-              }).toList(),
-              onChanged: (value) {
-                setState(() {
-                  _selectedUserAccountId = value;
-                });
-              },
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please select an account';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              value: _selectedAdminAccountId,
-              decoration: const InputDecoration(
-                labelText: 'Select Admin Account',
-                border: OutlineInputBorder(),
-              ),
-              items: _adminAccounts.map((account) {
-                return DropdownMenuItem(
-                  value: account['id'].toString(),
-                  child: Text(
-                    '${account['bank_name']} - ${account['account_no']}',
-                  ),
-                );
-              }).toList(),
-              onChanged: (value) {
-                setState(() {
-                  _selectedAdminAccountId = value;
-                });
-              },
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please select an admin account';
-                }
-                return null;
-              },
-            ),
             const SizedBox(height: 24),
+            // Submit Button
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
@@ -358,8 +604,8 @@ class _TransactionsPageState extends ConsumerState<TransactionsPage>
       final fileName = '${DateTime.now().millisecondsSinceEpoch}$fileExt';
       final filePath = 'payment_proofs/$fileName';
 
-      await supabase.storage.from('payment_proofs').upload(filePath, _paymentProof!);
-      final paymentProofUrl = supabase.storage.from('payment_proofs').getPublicUrl(filePath);
+      await supabase.storage.from('payments').upload(filePath, _paymentProof!);
+      final paymentProofUrl = supabase.storage.from('payments').getPublicUrl(filePath);
 
       // Create deposit transaction
       await supabase.from('account_transactions').insert({
@@ -415,7 +661,6 @@ class _TransactionsPageState extends ConsumerState<TransactionsPage>
         'transaction_type': 'withdraw',
         'amount': amount,
         'account_info_id': _selectedUserAccountId,
-        'admin_account_info_id': _selectedAdminAccountId,
         'verified': false,
       });
 
@@ -423,7 +668,6 @@ class _TransactionsPageState extends ConsumerState<TransactionsPage>
       _amountController.clear();
       setState(() {
         _selectedUserAccountId = null;
-        _selectedAdminAccountId = null;
       });
 
       if (mounted) {
@@ -455,66 +699,155 @@ class _TransactionsPageState extends ConsumerState<TransactionsPage>
     }
   }
 
-  Future<void> _loadAdminAccounts() async {
-    try {
-      final supabase = Supabase.instance.client;
-      final response = await supabase
-          .from('admin_accounts')
-          .select()
-          .order('created_at', ascending: false);
-
-      setState(() {
-        _adminAccounts = List<Map<String, dynamic>>.from(response);
-      });
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading admin accounts: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _loadUserAccounts() async {
-    try {
-      final supabase = Supabase.instance.client;
-      final response = await supabase
-          .from('user_accounts')
-          .select()
-          .eq('user_id', supabase.auth.currentUser!.id)
-          .order('created_at', ascending: false);
-
-      setState(() {
-        _userAccounts = List<Map<String, dynamic>>.from(response);
-      });
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading user accounts: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _loadUserBalance() async {
-    try {
-      final supabase = Supabase.instance.client;
-      final response = await supabase
-          .from('account_balances')
-          .select('balance')
-          .eq('user_id', supabase.auth.currentUser!.id)
-          .single();
-
-      setState(() {
-        _userBalance = (response['balance'] as num).toDouble();
-      });
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading balance: $e')),
-        );
-      }
-    }
+  Widget _buildAddAccountDialog() {
+    return Container(
+      color: Colors.black54,
+      child: Center(
+        child: Card(
+          margin: const EdgeInsets.all(16),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Add New ${_selectedAccountType?.toUpperCase() ?? ''} Account',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (_selectedAccountType == 'bank_transfer') ...[
+                    TextFormField(
+                      controller: _bankNameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Bank Name',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter bank name';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _ifscCodeController,
+                      decoration: const InputDecoration(
+                        labelText: 'IFSC Code',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter IFSC code';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _bankAddressController,
+                      decoration: const InputDecoration(
+                        labelText: 'Bank Address',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter bank address';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _accountNoController,
+                      decoration: const InputDecoration(
+                        labelText: 'Account Number',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter account number';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _fullNameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Account Holder Name',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter account holder name';
+                        }
+                        return null;
+                      },
+                    ),
+                  ] else if (_selectedAccountType == 'upi') ...[
+                    TextFormField(
+                      controller: _upiIdController,
+                      decoration: const InputDecoration(
+                        labelText: 'UPI ID',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter UPI ID';
+                        }
+                        return null;
+                      },
+                    ),
+                  ] else if (_selectedAccountType == 'crypto_wallet') ...[
+                    TextFormField(
+                      controller: _walletAddressController,
+                      decoration: const InputDecoration(
+                        labelText: 'Wallet Address',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter wallet address';
+                        }
+                        return null;
+                      },
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _isAddingNewAccount = false;
+                          });
+                        },
+                        child: const Text('Cancel'),
+                      ),
+                      const SizedBox(width: 16),
+                      ElevatedButton(
+                        onPressed: _isLoading ? null : _addNewAccount,
+                        child: _isLoading
+                            ? const CircularProgressIndicator()
+                            : const Text('Add Account'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

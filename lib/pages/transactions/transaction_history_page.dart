@@ -143,6 +143,7 @@ class TransactionHistoryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDeposit = transaction.transactionType == 'deposit';
+    final isFee = transaction.transactionType == 'fee';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -170,15 +171,23 @@ class TransactionHistoryCard extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: isDeposit 
+                    color: isFee
+                        ? Colors.orange.withOpacity(0.2)
+                        : isDeposit
                         ? Colors.green.withOpacity(0.2)
                         : Colors.red.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    transaction.transactionType.toUpperCase(),
+                    isFee
+                        ? 'TRADE FEE'
+                        : transaction.transactionType.toUpperCase(),
                     style: TextStyle(
-                      color: isDeposit ? Colors.green : Colors.red,
+                      color: isFee
+                          ? Colors.orange
+                          : isDeposit
+                              ? Colors.green
+                              : Colors.red,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -190,7 +199,11 @@ class TransactionHistoryCard extends StatelessWidget {
               context,
               'Amount',
               '\$${transaction.amount.toStringAsFixed(2)}',
-              valueColor: isDeposit ? Colors.green : Colors.red,
+              valueColor: isFee
+                  ? Colors.orange
+                  : isDeposit
+                      ? Colors.green
+                      : Colors.red,
             ),
             if (transaction.verifiedTime != null) ...[
               _buildDetailRow(

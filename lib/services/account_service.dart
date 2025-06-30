@@ -1,10 +1,11 @@
-import 'dart:developer';
+import 'dart:developer' as developer;
 import 'dart:math' as math;
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/account_balance.dart';
 import '../models/trade.dart';
 import '../services/websocket_service.dart';
+import 'package:flutter/material.dart';
 
 class AccountService {
   final SupabaseClient _supabase = Supabase.instance.client;
@@ -13,14 +14,13 @@ class AccountService {
 
   // Generate a 10-digit numeric ID
   String _generateNumericId() {
-    // Start with 20 followed by 9 random digits to ensure 10 digits total
-    // Using a different prefix than trades (which use 10) to distinguish them
     return '20${_random.nextInt(900000000) + 100000000}';
   }
 
   // Get account balance for the current user
   Future<AccountBalance> getAccountBalance() async {
-    final userId = _supabase.auth.currentUser!.id;
+    final userId = _supabase.auth.currentUser?.id;
+    if (userId == null) throw Exception('User not authenticated');
 
     try {
       // First try to get the existing balance
@@ -57,7 +57,8 @@ class AccountService {
 
       return AccountBalance.fromJson(newResponse);
     } catch (e) {
-      // If there's any other error, create a default balance object
+      developer.log('Error in getAccountBalance: $e', name: 'AccountService');
+      // If there's any error, create a default balance object
       return AccountBalance(
         id: _generateNumericId(),
         userId: userId,
@@ -73,20 +74,26 @@ class AccountService {
   }
 
   // Get transactions for the current user
-  Future<List<Transaction>> getTransactions(
-      {int limit = 50, int offset = 0}) async {
-    final userId = _supabase.auth.currentUser!.id;
+  Future<List<Transaction>> getTransactions() async {
+    final userId = _supabase.auth.currentUser?.id;
+    if (userId == null) throw Exception('User not authenticated');
 
-    final response = await _supabase
-        .from('transactions')
-        .select()
-        .eq('user_id', userId)
-        .order('created_at', ascending: false)
-        .range(offset, offset + limit - 1);
+    try {
+      final response = await _supabase
+          .from('transactions')
+          .select()
+          .eq('user_id', userId)
+          .order('created_at', ascending: false);
 
-    return response
-        .map<Transaction>((json) => Transaction.fromJson(json))
-        .toList();
+      if (response == null) {
+        return [];
+      }
+
+      return response.map<Transaction>((json) => Transaction.fromJson(json)).toList();
+    } catch (e) {
+      developer.log('Error in getTransactions: $e', name: 'AccountService');
+      rethrow;
+    }
   }
 
   // Create a new transaction and update account balance
@@ -99,68 +106,93 @@ class AccountService {
     String? accountInfoId,
     String? adminAccountInfoId,
   }) async {
-    final userId = _supabase.auth.currentUser!.id;
-    final now = DateTime.now();
+    final userId = _supabase.auth.currentUser?.id;
+    if (userId == null) throw Exception('User not authenticated');
 
-    // Get current balance
-    final balanceResponse = await _supabase
-        .from('account_balances')
-        .select('balance')
-        .eq('user_id', userId)
-        .single();
-    
-    final currentBalance = (balanceResponse['balance'] as num).toDouble();
+    try {
+      final now = DateTime.now();
 
-    // Create transaction object
-    final transaction = Transaction(
-      id: _generateNumericId(),
-      userId: userId,
-      type: type,
-      amount: amount,
-      description: description,
-      relatedTradeId: relatedTradeId,
-      createdAt: now,
-  
-    );
+      // Get current balance
+      final balanceResponse = await _supabase
+          .from('account_balances')
+          .select('balance')
+          .eq('user_id', userId)
+          .single();
+      
+      final currentBalance = (balanceResponse['balance'] as num).toDouble();
 
-    // Start a transaction to update both tables
-    await _supabase.rpc('create_transaction', params: {
-      'transaction_id': transaction.id,
-      'user_id_param': userId,
-      'transaction_type': type.toString().split('.').last,
-      'amount': amount,
-      'description': description,
-      'related_trade_id': relatedTradeId,
-      'created_at': now.toIso8601String(),
-      'payment_proof': paymentProof,
-      'user_current_balance': currentBalance,
-      'account_info_id': accountInfoId,
-      'admin_account_info_id': adminAccountInfoId,
-    });
+      // Calculate new balance based on transaction type
+      double newBalance;
+      if (type == TransactionType.profit || type == TransactionType.deposit || type == TransactionType.credit) {
+        newBalance = currentBalance + amount;
+      } else if (type == TransactionType.loss || type == TransactionType.fee || type == TransactionType.withdrawal) {
+        newBalance = currentBalance - amount;
+      } else if (type == TransactionType.adjustment) {
+        // For adjustments, we don't modify the balance
+        newBalance = currentBalance;
+      } else {
+        throw Exception('Invalid transaction type');
+      }
 
-    // Get the updated transaction
-    final response = await _supabase
-        .from('transactions')
-        .select()
-        .eq('id', transaction.id)
-        .single();
+      // Create transaction object
+      final transaction = Transaction(
+        id: _generateNumericId(),
+        userId: userId,
+        type: type,
+        amount: amount,
+        description: description,
+        relatedTradeId: relatedTradeId,
+        createdAt: now,
+        paymentProof: paymentProof,
+        userCurrentBalance: currentBalance,
+        accountInfoId: accountInfoId,
+        adminAccountInfoId: adminAccountInfoId,
+      );
 
-    // Get the current balance after the transaction
-    final newBalanceResponse = await _supabase
-        .from('account_balances')
-        .select('balance')
-        .eq('user_id', userId)
-        .single();
+      // Start a transaction to update both tables
+      await _supabase.from('transactions').insert({
+        'id': transaction.id,
+        'user_id': userId,
+        'type': type.toString().split('.').last,
+        'amount': amount,
+        'description': description,
+        'related_trade_id': relatedTradeId,
+        'created_at': now.toIso8601String(),
+        'payment_proof': paymentProof,
+        'user_current_balance': currentBalance,
+        'account_info_id': accountInfoId,
+        'admin_account_info_id': adminAccountInfoId,
+      });
 
-    // Update appusers table with the new balance
-    await _supabase
-        .from('appusers')
-        .update({
-          'account_balance': newBalanceResponse['balance'],
-        })
-        .eq('user_id', userId);
+      // Update account balance
+      await _supabase
+          .from('account_balances')
+          .update({
+            'balance': newBalance,
+            'updated_at': now.toIso8601String(),
+          })
+          .eq('user_id', userId);
 
-    return Transaction.fromJson(response);
+      // Update appusers table with the new balance
+      await _supabase
+          .from('appusers')
+          .update({
+            'account_balance': newBalance,
+          })
+          .eq('user_id', userId);
+
+      // Get the created transaction
+      final response = await _supabase
+          .from('transactions')
+          .select()
+          .eq('id', transaction.id)
+          .single();
+
+      return Transaction.fromJson(response);
+    } catch (e) {
+      developer.log('Error in createTransaction: $e', name: 'AccountService');
+      rethrow;
+    }
   }
 
   // Create a deposit transaction
@@ -171,14 +203,20 @@ class AccountService {
     required String adminAccountInfoId,
     String description = 'Deposit',
   }) async {
-    return createTransaction(
-      type: TransactionType.deposit,
-      amount: amount,
-      description: description,
-      paymentProof: paymentProof,
-      accountInfoId: accountInfoId,
-      adminAccountInfoId: adminAccountInfoId,
-    );
+    try {
+      return await createTransaction(
+        type: TransactionType.deposit,
+        amount: amount,
+        description: description,
+        relatedTradeId: null,
+        paymentProof: paymentProof,
+        accountInfoId: accountInfoId,
+        adminAccountInfoId: adminAccountInfoId,
+      );
+    } catch (e) {
+      developer.log('Error in createDeposit: $e', name: 'AccountService');
+      rethrow;
+    }
   }
 
   // Create a withdrawal transaction
@@ -188,13 +226,169 @@ class AccountService {
     required String adminAccountInfoId,
     String description = 'Withdrawal',
   }) async {
-    return createTransaction(
-      type: TransactionType.withdrawal,
-      amount: amount,
-      description: description,
-      accountInfoId: accountInfoId,
-      adminAccountInfoId: adminAccountInfoId,
-    );
+    try {
+      return await createTransaction(
+        type: TransactionType.withdrawal,
+        amount: amount,
+        description: description,
+        relatedTradeId: null,
+        accountInfoId: accountInfoId,
+        adminAccountInfoId: adminAccountInfoId,
+      );
+    } catch (e) {
+      developer.log('Error in createWithdrawal: $e', name: 'AccountService');
+      rethrow;
+    }
+  }
+
+  // Get account transactions with date filtering
+  Future<List<Map<String, dynamic>>> getAccountTransactions({
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    final userId = _supabase.auth.currentUser?.id;
+    if (userId == null) throw Exception('User not authenticated');
+
+    try {
+      var query = _supabase
+          .from('account_transactions')
+          .select()
+          .eq('user_id', userId)
+          .order('created_at', ascending: false);
+
+    
+      final response = await query;
+      return response as List<Map<String, dynamic>>;
+    } catch (e) {
+      developer.log('Error in getAccountTransactions: $e', name: 'AccountService');
+      rethrow;
+    }
+  }
+
+  // Get system transactions with date filtering
+  Future<List<Map<String, dynamic>>> getSystemTransactions({
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    final userId = _supabase.auth.currentUser?.id;
+    if (userId == null) throw Exception('User not authenticated');
+
+    try {
+      var query = _supabase
+          .from('transactions')
+          .select()
+          .eq('user_id', userId)
+          .order('created_at', ascending: false);
+
+      
+
+      final response = await query;
+      return response as List<Map<String, dynamic>>;
+    } catch (e) {
+      developer.log('Error in getSystemTransactions: $e', name: 'AccountService');
+      rethrow;
+    }
+  }
+
+  // Create daily account snapshot
+  Future<void> createDailyAccountSnapshot() async {
+    final userId = _supabase.auth.currentUser?.id;
+    if (userId == null) throw Exception('User not authenticated');
+
+    try {
+      // Get current account balance
+      final accountBalance = await getAccountBalance();
+      
+      // Get today's date in UTC
+      final today = DateTime.now().toUtc();
+      final snapshotDate = DateTime(today.year, today.month, today.day);
+
+      // Check if snapshot already exists for today
+      final existingSnapshot = await _supabase
+          .from('account_snapshots')
+          .select()
+          .eq('user_id', userId)
+          .eq('snapshot_date', snapshotDate.toIso8601String().split('T')[0])
+          .maybeSingle();
+
+      if (existingSnapshot != null) {
+        // Update existing snapshot
+        await _supabase
+            .from('account_snapshots')
+            .update({
+              'balance': accountBalance.balance,
+              'equity': accountBalance.equity,
+              'credit': accountBalance.credit,
+              'margin': accountBalance.margin,
+              'free_margin': accountBalance.freeMargin,
+              'margin_level': accountBalance.marginLevel,
+              'profit_loss': accountBalance.equity - accountBalance.balance,
+              'updated_at': DateTime.now().toIso8601String(),
+            })
+            .eq('id', existingSnapshot['id']);
+      } else {
+        // Create new snapshot
+        await _supabase
+            .from('account_snapshots')
+            .insert({
+              'user_id': userId,
+              'balance': accountBalance.balance,
+              'equity': accountBalance.equity,
+              'credit': accountBalance.credit,
+              'margin': accountBalance.margin,
+              'free_margin': accountBalance.freeMargin,
+              'margin_level': accountBalance.marginLevel,
+              'profit_loss': accountBalance.equity - accountBalance.balance,
+              'snapshot_date': snapshotDate.toIso8601String().split('T')[0],
+            });
+      }
+    } catch (e) {
+      developer.log('Error in createDailyAccountSnapshot: $e', name: 'AccountService');
+      rethrow;
+    }
+  }
+
+  // Get account snapshot for a specific date
+  Future<Map<String, dynamic>?> getAccountSnapshot(DateTime date) async {
+    final userId = _supabase.auth.currentUser?.id;
+    if (userId == null) throw Exception('User not authenticated');
+
+    try {
+      final snapshotDate = DateTime(date.year, date.month, date.day);
+      
+      final snapshot = await _supabase
+          .from('account_snapshots')
+          .select()
+          .eq('user_id', userId)
+          .eq('snapshot_date', snapshotDate.toIso8601String().split('T')[0])
+          .maybeSingle();
+
+      return snapshot;
+    } catch (e) {
+      developer.log('Error in getAccountSnapshot: $e', name: 'AccountService');
+      rethrow;
+    }
+  }
+
+  // Get account snapshots for a date range
+  Future<List<Map<String, dynamic>>> getAccountSnapshots(DateTimeRange dateRange) async {
+    final userId = _supabase.auth.currentUser?.id;
+    if (userId == null) throw Exception('User not authenticated');
+
+    try {
+      final snapshots = await _supabase
+          .from('account_snapshots')
+          .select()
+          .eq('user_id', userId)
+          .gte('snapshot_date', dateRange.start.toIso8601String().split('T')[0])
+          .lte('snapshot_date', dateRange.end.toIso8601String().split('T')[0])
+          .order('snapshot_date', ascending: false);
+
+      return snapshots as List<Map<String, dynamic>>;
+    } catch (e) {
+      developer.log('Error in getAccountSnapshots: $e', name: 'AccountService');
+      rethrow;
+    }
   }
 
   // Calculate account metrics based on open trades
@@ -288,7 +482,7 @@ class AccountService {
         trade.profit! >= 0 ? TransactionType.profit : TransactionType.loss;
 
     try {
-      log('Processing ${transactionType.toString().split('.').last} transaction for trade ${trade.id}');
+      developer.log('Processing ${transactionType.toString().split('.').last} transaction for trade ${trade.id}');
 
       await createTransaction(
         type: transactionType,
@@ -298,9 +492,9 @@ class AccountService {
         relatedTradeId: trade.id,
       );
 
-      log('Successfully created transaction for trade ${trade.id}');
+      developer.log('Successfully created transaction for trade ${trade.id}');
     } catch (e) {
-      log('Error creating transaction for trade ${trade.id}: $e');
+      developer.log('Error creating transaction for trade ${trade.id}: $e');
 
       // Try direct update of account balance as a fallback
       try {
@@ -340,9 +534,9 @@ class AccountService {
             })
             .eq('user_id', userId);
 
-        log('Successfully updated account balance directly for trade ${trade.id}');
+        developer.log('Successfully updated account balance directly for trade ${trade.id}');
       } catch (fallbackError) {
-        log('Fallback error updating account balance: $fallbackError');
+        developer.log('Fallback error updating account balance: $fallbackError');
       }
     }
   }

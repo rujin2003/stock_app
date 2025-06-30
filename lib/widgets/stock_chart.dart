@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
+import 'dart:async';
+import 'dart:math' as math;
 import '../models/candlestick_data.dart';
 import '../models/symbol.dart';
 import '../providers/chart_provider.dart';
 import '../services/chart_service.dart';
 import '../widgets/responsive_layout.dart';
 import '../providers/time_zone_provider.dart';
+import '../providers/market_data_provider.dart';
+import '../models/market_data.dart';
 
 class StockChart extends ConsumerStatefulWidget {
   final Symbol? symbol;
@@ -24,6 +28,8 @@ class StockChart extends ConsumerStatefulWidget {
 class _StockChartState extends ConsumerState<StockChart> {
   bool _isZoomed = false;
   late ZoomPanBehavior _zoomPanBehavior;
+  List<CandlestickData> _currentData = [];
+  StreamSubscription<MarketData>? _marketDataSubscription;
 
   @override
   void initState() {
@@ -34,9 +40,65 @@ class _StockChartState extends ConsumerState<StockChart> {
       enableDoubleTapZooming: true,
       enableMouseWheelZooming: true,
       enableSelectionZooming: true,
-      zoomMode: ZoomMode.x, // Ensure zooming only works on x-axis
-      maximumZoomLevel: 0.05, // Changed from 0.3 to 0.05 for deeper zoom
+      zoomMode: ZoomMode.x,
+      maximumZoomLevel: 0.05,
     );
+  }
+
+  @override
+  void dispose() {
+    _marketDataSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _subscribeToMarketData(Symbol symbol) {
+    // Cancel any existing subscription
+    _marketDataSubscription?.cancel();
+
+    // Subscribe to market data stream
+    _marketDataSubscription = ref
+        .read(marketDataProvider(symbol.code).stream)
+        .listen((marketData) {
+      if (mounted) {
+        _updateChartWithMarketData(marketData);
+      }
+    });
+  }
+
+  void _updateChartWithMarketData(MarketData marketData) {
+    if (_currentData.isEmpty) return;
+
+    setState(() {
+      // Get the last candle
+      final lastCandle = _currentData.last;
+      final now = DateTime.now();
+      
+      // Check if we need to create a new candle or update the existing one
+      if (now.difference(lastCandle.timestamp).inMinutes >= 1) {
+        // Create a new candle
+        _currentData.add(CandlestickData(
+          open: marketData.lastPrice,
+          high: marketData.lastPrice,
+          low: marketData.lastPrice,
+          close: marketData.lastPrice,
+          volume: marketData.volume ?? 0.0,
+          amount: marketData.lastPrice * (marketData.volume ?? 0.0),
+          timestamp: now,
+        ));
+      } else {
+        // Update the last candle
+        final updatedCandle = CandlestickData(
+          open: lastCandle.open,
+          high: math.max(lastCandle.high, marketData.lastPrice),
+          low: math.min(lastCandle.low, marketData.lastPrice),
+          close: marketData.lastPrice,
+          volume: lastCandle.volume + (marketData.volume ?? 0.0),
+          amount: lastCandle.amount + (marketData.lastPrice * (marketData.volume ?? 0.0)),
+          timestamp: lastCandle.timestamp,
+        );
+        _currentData[_currentData.length - 1] = updatedCandle;
+      }
+    });
   }
 
   @override
@@ -68,7 +130,12 @@ class _StockChartState extends ConsumerState<StockChart> {
           child: Stack(
             children: [
               candlestickDataAsync.when(
-                data: (data) => _buildChart(context, data),
+                data: (data) {
+                  _currentData = data;
+                  // Subscribe to market data when we get initial data
+                  _subscribeToMarketData(selectedSymbol);
+                  return _buildChart(context, _currentData);
+                },
                 loading: () => const Center(
                   child: CircularProgressIndicator(),
                 ),
@@ -403,6 +470,7 @@ class _StockChartState extends ConsumerState<StockChart> {
         autoScrollingDelta: _getAutoScrollingDelta(kLineType),
         autoScrollingDeltaType: DateTimeIntervalType.auto,
         enableAutoIntervalOnZooming: true,
+        maximum: DateTime.now().add(const Duration(minutes: 1)),
       ),
       primaryYAxis: NumericAxis(
         labelFormat: '{value}',
@@ -414,30 +482,27 @@ class _StockChartState extends ConsumerState<StockChart> {
             : ChartDataLabelPosition.outside,
         plotBands: [
           if (currentPrice != null)
-          PlotBand(
+            PlotBand(
               isVisible: true,
               start: currentPrice,
               end: currentPrice,
               borderColor: priceLineColor,
               borderWidth: 2,
-              text:'   ${currentPrice.toStringAsFixed(2)}  \n \n   ',
+              text: '   ${currentPrice.toStringAsFixed(2)}  \n \n   ',
               textStyle: TextStyle(
-
-             
                 backgroundColor: priceLineColor,
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
                 fontSize: isMobile ? 10 : 12,
-                 height: 1.5,
+                height: 1.5,
               ),
               verticalTextAlignment: TextAnchor.start,
               horizontalTextAlignment: TextAnchor.start,
             ),
-          // Example alert line at 3325.00
-        
         ],
       ),
       series: <CartesianSeries>[
+        // Completed candles
         CandleSeries<CandlestickData, DateTime>(
           dataSource: data,
           xValueMapper: (CandlestickData data, _) => data.timestamp,
@@ -450,7 +515,21 @@ class _StockChartState extends ConsumerState<StockChart> {
           enableSolidCandles: false,
           animationDuration: 0,
           borderWidth: isMobile ? 1 : 2,
+          opacity: 0.8,
         ),
+        // Real-time price line
+        if (data.isNotEmpty)
+          LineSeries<CandlestickData, DateTime>(
+            dataSource: [data.last],
+            xValueMapper: (CandlestickData data, _) => data.timestamp,
+            yValueMapper: (CandlestickData data, _) => data.close,
+            color: priceLineColor,
+            width: 1,
+            dashArray: const [5, 5],
+            markerSettings: const MarkerSettings(
+              isVisible: false,
+            ),
+          ),
       ],
       zoomPanBehavior: _zoomPanBehavior,
       onZooming: (ZoomPanArgs args) {
@@ -481,8 +560,7 @@ class _StockChartState extends ConsumerState<StockChart> {
       crosshairBehavior: CrosshairBehavior(
         enable: true,
         activationMode: ActivationMode.singleTap,
-        lineType: CrosshairLineType
-            .vertical, // Only show vertical crosshair for x-axis focus
+        lineType: CrosshairLineType.vertical,
         lineDashArray: const [5, 5],
         lineColor: theme.colorScheme.primary.withOpacity(0.5),
         lineWidth: 1,

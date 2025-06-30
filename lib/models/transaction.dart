@@ -130,10 +130,26 @@ class Transaction {
       case TransactionType.credit:
         return 'Credit';
       case TransactionType.fee:
-        return 'Fee';
+        return 'Trade Fee';
       case TransactionType.adjustment:
         return 'Adjustment';
     }
+  }
+
+  // Get formatted amount with sign
+  String getFormattedAmount() {
+    final sign = type == TransactionType.deposit || 
+                type == TransactionType.profit || 
+                type == TransactionType.credit ? '+' : '-';
+    return '$sign\$${amount.toStringAsFixed(2)}';
+  }
+
+  // Get detailed description
+  String getDetailedDescription() {
+    if (type == TransactionType.fee && description != null) {
+      return description!;
+    }
+    return description ?? getTypeDisplayName();
   }
 
   // Get verification status display

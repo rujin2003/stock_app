@@ -100,7 +100,11 @@ class ChartService {
       );
 
       if (response.data['code'] == 0) {
-        final List<dynamic> data = response.data['data'];
+        final dynamic rawData = response.data['data'];
+        if (rawData == null) {
+          return <CandlestickData>[];
+        }
+        final List<dynamic> data = rawData as List<dynamic>;
         return data.map((item) => CandlestickData.fromJson(item)).toList();
       } else {
         throw Exception(

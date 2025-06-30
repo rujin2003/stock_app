@@ -16,6 +16,8 @@ class AuthService {
   // Key for storing linked accounts
   static const String _linkedAccountsKey = 'linked_accounts';
 
+  User? get currentUser => _client.auth.currentUser;
+
   Future<void> signUp({required String email, required String password}) async {
     await _client.auth.signUp(
       email: email,

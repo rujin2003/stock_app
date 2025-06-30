@@ -12,6 +12,10 @@ import '../widgets/responsive_layout.dart';
 import '../widgets/time_filter_dropdown.dart';
 import '../models/unified_transaction.dart'; 
 import '../providers/history_transactions_provider.dart'; 
+import '../providers/account_snapshot_provider.dart';
+import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:developer' as developer;
 
 // Provider for total P/L of all open positions (copied from trade_page.dart)
 final totalProfitLossProvider = Provider<AsyncValue<double>>((ref) {
@@ -108,6 +112,13 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _scrollController.addListener(_scrollListener);
+    
+    // Initialize and fetch transactions using Future.microtask
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.microtask(() {
+        ref.read(historyTransactionsProvider.notifier).initialize();
+      });
+    });
   }
 
   @override
@@ -125,7 +136,9 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
               _scrollController.position.maxScrollExtent * 0.8 &&
           !historyState.isLoadingMore &&
           historyState.hasMore) {
-        ref.read(historyTransactionsProvider.notifier).fetchMoreTransactions();
+        Future.microtask(() {
+          ref.read(historyTransactionsProvider.notifier).fetchMoreTransactions();
+        });
       }
     }
   }
@@ -149,6 +162,14 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
           ),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () {
+              Future.microtask(() {
+                ref.read(historyTransactionsProvider.notifier).fetchInitialTransactions();
+              });
+            },
+          ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8.0),
             child: Center(
@@ -158,7 +179,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
           IconButton(
             icon: const Icon(Icons.add),
             tooltip: 'Deposit Funds',
-            onPressed: () => _showDepositDialog(context),
+            onPressed: () => context.go('/transactions'),
           ),
         ],
         bottom: TabBar(
@@ -318,9 +339,12 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
       BuildContext context, AccountBalance accountBalance) {
     final theme = Theme.of(context);
     final isMobile = ResponsiveLayout.isMobile(context);
+    final timeFilter = ref.watch(timeFilterProvider);
+    final isToday = timeFilter.option == TimeFilterOption.today;
 
     // Get total P&L to display
     final totalProfitLossAsync = ref.watch(totalProfitLossProvider);
+    final latestSnapshotAsync = ref.watch(latestAccountSnapshotProvider);
 
     return Container(
       width: double.infinity,
@@ -352,18 +376,49 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                       ),
                     ),
                     const SizedBox(height: 2),
-                    Text(
-                      '\$${accountBalance.balance.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.onSurface,
-                      ),
-                    ),
+                    isToday
+                        ? Text(
+                            '\$${accountBalance.balance.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: theme.colorScheme.onSurface,
+                            ),
+                          )
+                        : latestSnapshotAsync.when(
+                            data: (snapshot) => snapshot == null
+                                ? Text(
+                                    'No Data',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.red,
+                                    ),
+                                  )
+                                : Text(
+                                    '\$${snapshot['balance'].toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: theme.colorScheme.onSurface,
+                                    ),
+                                  ),
+                            loading: () => const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            error: (_, __) => Text(
+                              'Error',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.red,
+                              ),
+                            ),
+                          ),
                   ],
                 ),
               ),
-              // Equity - now dependent on P&L like in trade_page
+              // Equity
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -377,32 +432,62 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                       ),
                     ),
                     const SizedBox(height: 2),
-                    totalProfitLossAsync.when(
-                      data: (totalPL) {
-                        // Calculate equity as balance + P&L
-                        final equity = accountBalance.balance + totalPL;
-                        return Text(
-                          '\$${equity.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: theme.colorScheme.onSurface,
+                    isToday
+                        ? totalProfitLossAsync.when(
+                            data: (totalPL) {
+                              final equity = accountBalance.balance + totalPL;
+                              return Text(
+                                '\$${equity.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: theme.colorScheme.onSurface,
+                                ),
+                              );
+                            },
+                            loading: () => const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            error: (_, __) => Text(
+                              'Error',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.red,
+                              ),
+                            ),
+                          )
+                        : latestSnapshotAsync.when(
+                            data: (snapshot) => snapshot == null
+                                ? Text(
+                                    'No Data',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.red,
+                                    ),
+                                  )
+                                : Text(
+                                    '\$${snapshot['equity'].toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: theme.colorScheme.onSurface,
+                                    ),
+                                  ),
+                            loading: () => const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            error: (_, __) => Text(
+                              'Error',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.red,
+                              ),
+                            ),
                           ),
-                        );
-                      },
-                      loading: () => const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      error: (_, __) => Text(
-                        'Error',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.red,
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -411,10 +496,9 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
 
           const SizedBox(height: 12),
 
-          // New row - P&L (like in trade_page.dart)
+          // P&L row
           Row(
             children: [
-              // P&L
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -428,45 +512,79 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                       ),
                     ),
                     const SizedBox(height: 2),
-                    totalProfitLossAsync.when(
-                      data: (total) {
-                        final isProfit = total >= 0;
-                        return Text(
-                          '${isProfit ? '+' : ''}\$${total.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: isProfit ? Colors.green : Colors.red,
+                    isToday
+                        ? totalProfitLossAsync.when(
+                            data: (total) {
+                              final isProfit = total >= 0;
+                              return Text(
+                                '${isProfit ? '+' : ''}\$${total.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: isProfit ? Colors.green : Colors.red,
+                                ),
+                              );
+                            },
+                            loading: () => const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            error: (_, __) => Text(
+                              'Error',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.red,
+                              ),
+                            ),
+                          )
+                        : latestSnapshotAsync.when(
+                            data: (snapshot) {
+                              if (snapshot == null) {
+                                return Text(
+                                  'No Data',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.red,
+                                  ),
+                                );
+                              }
+                              final profitLoss = snapshot['profit_loss'] ?? 0.0;
+                              final isProfit = profitLoss >= 0;
+                              return Text(
+                                '${isProfit ? '+' : ''}\$${profitLoss.abs().toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: isProfit ? Colors.green : Colors.red,
+                                ),
+                              );
+                            },
+                            loading: () => const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            error: (_, __) => Text(
+                              'Error',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.red,
+                              ),
+                            ),
                           ),
-                        );
-                      },
-                      loading: () => const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      error: (_, __) => Text(
-                        'Error',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.red,
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),
-              // Blank space to match layout
               Expanded(child: Container()),
             ],
           ),
 
           const SizedBox(height: 12),
 
-          // Second row - Margin & Free Margin
+          // Margin & Free Margin row
           Row(
             children: [
-              // Margin
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -480,18 +598,48 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                       ),
                     ),
                     const SizedBox(height: 2),
-                    Text(
-                      '\$${accountBalance.margin.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.onSurface,
-                      ),
-                    ),
+                    isToday
+                        ? Text(
+                            '\$${accountBalance.margin.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: theme.colorScheme.onSurface,
+                            ),
+                          )
+                        : latestSnapshotAsync.when(
+                            data: (snapshot) => snapshot == null
+                                ? Text(
+                                    'No Data',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.red,
+                                    ),
+                                  )
+                                : Text(
+                                    '\$${snapshot['margin'].toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: theme.colorScheme.onSurface,
+                                    ),
+                                  ),
+                            loading: () => const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            error: (_, __) => Text(
+                              'Error',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.red,
+                              ),
+                            ),
+                          ),
                   ],
                 ),
               ),
-              // Free Margin
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -505,36 +653,66 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                       ),
                     ),
                     const SizedBox(height: 2),
-                    totalProfitLossAsync.when(
-                      data: (totalPL) {
-                        // Free margin might also depend on P&L
-                        final freeMargin = accountBalance.freeMargin + totalPL;
-                        return Text(
-                          '\$${freeMargin.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: theme.colorScheme.onSurface,
+                    isToday
+                        ? totalProfitLossAsync.when(
+                            data: (totalPL) {
+                              final freeMargin = accountBalance.freeMargin + totalPL;
+                              return Text(
+                                '\$${freeMargin.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: theme.colorScheme.onSurface,
+                                ),
+                              );
+                            },
+                            loading: () => Text(
+                              '\$${accountBalance.freeMargin.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: theme.colorScheme.onSurface,
+                              ),
+                            ),
+                            error: (_, __) => Text(
+                              '\$${accountBalance.freeMargin.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: theme.colorScheme.onSurface,
+                              ),
+                            ),
+                          )
+                        : latestSnapshotAsync.when(
+                            data: (snapshot) => snapshot == null
+                                ? Text(
+                                    'No Data',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.red,
+                                    ),
+                                  )
+                                : Text(
+                                    '\$${snapshot['free_margin'].toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: theme.colorScheme.onSurface,
+                                    ),
+                                  ),
+                            loading: () => const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            error: (_, __) => Text(
+                              'Error',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.red,
+                              ),
+                            ),
                           ),
-                        );
-                      },
-                      loading: () => Text(
-                        '\$${accountBalance.freeMargin.toStringAsFixed(2)}',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.onSurface,
-                        ),
-                      ),
-                      error: (_, __) => Text(
-                        '\$${accountBalance.freeMargin.toStringAsFixed(2)}',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.onSurface,
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -543,10 +721,9 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
 
           const SizedBox(height: 12),
 
-          // Third row - Credit & Margin Level
+          // Credit & Margin Level row
           Row(
             children: [
-              // Credit
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -560,18 +737,48 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                       ),
                     ),
                     const SizedBox(height: 2),
-                    Text(
-                      '\$${accountBalance.credit.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.onSurface,
-                      ),
-                    ),
+                    isToday
+                        ? Text(
+                            '\$${accountBalance.credit.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: theme.colorScheme.onSurface,
+                            ),
+                          )
+                        : latestSnapshotAsync.when(
+                            data: (snapshot) => snapshot == null
+                                ? Text(
+                                    'No Data',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.red,
+                                    ),
+                                  )
+                                : Text(
+                                    '\$${snapshot['credit'].toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: theme.colorScheme.onSurface,
+                                    ),
+                                  ),
+                            loading: () => const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            error: (_, __) => Text(
+                              'Error',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.red,
+                              ),
+                            ),
+                          ),
                   ],
                 ),
               ),
-              // Margin Level
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -585,40 +792,69 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                       ),
                     ),
                     const SizedBox(height: 2),
-                    totalProfitLossAsync.when(
-                      data: (totalPL) {
-                        // Recalculate margin level based on equity with P&L
-                        final equity = accountBalance.balance + totalPL;
-                        final marginLevel = accountBalance.margin > 0
-                            ? (equity / accountBalance.margin) * 100
-                            : 0.0;
-
-                        return Text(
-                          '${marginLevel.toStringAsFixed(2)}%',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: theme.colorScheme.onSurface,
+                    isToday
+                        ? totalProfitLossAsync.when(
+                            data: (totalPL) {
+                              final equity = accountBalance.balance + totalPL;
+                              final marginLevel = accountBalance.margin > 0
+                                  ? (equity / accountBalance.margin) * 100
+                                  : 0.0;
+                              return Text(
+                                '${marginLevel.toStringAsFixed(2)}%',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: theme.colorScheme.onSurface,
+                                ),
+                              );
+                            },
+                            loading: () => Text(
+                              '${accountBalance.marginLevel.toStringAsFixed(2)}%',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: theme.colorScheme.onSurface,
+                              ),
+                            ),
+                            error: (_, __) => Text(
+                              '${accountBalance.marginLevel.toStringAsFixed(2)}%',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: theme.colorScheme.onSurface,
+                              ),
+                            ),
+                          )
+                        : latestSnapshotAsync.when(
+                            data: (snapshot) => snapshot == null
+                                ? Text(
+                                    'No Data',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.red,
+                                    ),
+                                  )
+                                : Text(
+                                    '${snapshot['margin_level'].toStringAsFixed(2)}%',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: theme.colorScheme.onSurface,
+                                    ),
+                                  ),
+                            loading: () => const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            error: (_, __) => Text(
+                              'Error',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.red,
+                              ),
+                            ),
                           ),
-                        );
-                      },
-                      loading: () => Text(
-                        '${accountBalance.marginLevel.toStringAsFixed(2)}%',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.onSurface,
-                        ),
-                      ),
-                      error: (_, __) => Text(
-                        '${accountBalance.marginLevel.toStringAsFixed(2)}%',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.onSurface,
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -634,117 +870,119 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
     final historyState = ref.watch(historyTransactionsProvider);
     final transactions = historyState.transactions;
 
-    if (historyState.isLoading && transactions.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
+    // Remove the redundant fetch as this is already handled in initState and by the TimeFilter change listener
+    // ref.read(historyTransactionsProvider.notifier).fetchInitialTransactions();
+
+    print('Debug: History page - Current state:');
+    print('Debug: - isLoading: ${historyState.isLoading}');
+    print('Debug: - isLoadingMore: ${historyState.isLoadingMore}');
+    print('Debug: - hasMore: ${historyState.hasMore}');
+    print('Debug: - error: ${historyState.error}');
+    print('Debug: - transactions count: ${transactions.length}');
 
     if (historyState.error != null && transactions.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text('Failed to Load Transactions: ${historyState.error}', style: TextStyle(color: Colors.red)),
-            const SizedBox(height: 10),
-            ElevatedButton(
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Colors.red[400],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Failed to Load Transactions',
+              style: TextStyle(
+                fontSize: 18,
+                color: Colors.grey[600],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Text(
+                historyState.error!,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[500],
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
               onPressed: () => ref.read(historyTransactionsProvider.notifier).retry(),
-              child: const Text('Retry'),
+              icon: const Icon(Icons.refresh),
+              label: const Text('Try Again'),
             ),
           ],
         ),
       );
     }
 
-    if (transactions.isEmpty && !historyState.isLoading && !historyState.hasMore) {
-        return _buildEmptyState(context, 'No Transactions', 'All your account and trade activities will appear here.');
+    if (transactions.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.history,
+              size: 64,
+              color: Colors.grey[400],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'No Transactions Available',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey[700],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Text(
+                'Your transaction history will appear here once you make a transaction.',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey[600],
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () {
+                ref.read(historyTransactionsProvider.notifier).fetchInitialTransactions();
+              },
+              icon: const Icon(Icons.refresh),
+              label: const Text('Refresh'),
+            ),
+          ],
+        ),
+      );
     }
-    
-    // If transactions are empty but it might still be loading more or has potential to load more, show loading or a less definitive empty state.
-    // This case is tricky. If transactions is empty, isLoading is false, but hasMore is true, it means the first fetch returned nothing but thinks there could be more.
-    // This usually shouldn't happen if the first fetch correctly sets hasMore to false if it gets nothing.
-    // For now, if transactions is empty and not loading, and error is null, assume "No Transactions" if hasMore is also false.
 
     return Column(
       children: [
         Expanded(
           child: ListView.builder(
-            controller: _scrollController, // Attach scroll controller here
+            controller: _scrollController,
             itemCount: transactions.length + (historyState.isLoadingMore ? 1 : 0),
             itemBuilder: (context, index) {
               if (index == transactions.length && historyState.isLoadingMore) {
-                return const Center(child: Padding(
-                  padding: EdgeInsets.all(8.0),
-                  child: CircularProgressIndicator(),
-                ));
-              }
-              if (index >= transactions.length) { // Should not happen if itemCount is correct
-                  return const SizedBox.shrink(); 
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: CircularProgressIndicator(),
+                  ),
+                );
               }
 
               final transaction = transactions[index];
               final isExpanded = _expandedTransactions[transaction.id] ?? false;
-
-              IconData iconData;
-              Color iconColor;
-              String title;
-              String subtitle; // More detailed description or original type
-
-              if (transaction.source == TransactionSource.account) { // Corrected
-                bool isPositive = transaction.amount > 0;
-                iconData = isPositive ? Icons.account_balance_wallet_outlined : Icons.credit_card_off_outlined;
-                iconColor = isPositive ? Colors.green.shade600 : Colors.red.shade600;
-                title = transaction.displayType;
-                subtitle = transaction.originalTypeFromDb ?? transaction.description ?? '';
-              } else { // System transaction (source == TransactionSource.system)
-                switch (transaction.category) {
-                  case UnifiedTransactionCategory.profit:
-                    iconData = Icons.trending_up;
-                    iconColor = Colors.green.shade700;
-                    title = 'Trade Profit';
-                    subtitle = 'Related ID: ${transaction.relatedTradeId ?? "N/A"}';
-                    break;
-                  case UnifiedTransactionCategory.loss:
-                    iconData = Icons.trending_down;
-                    iconColor = Colors.red.shade700;
-                    title = 'Trade Loss';
-                    subtitle = 'Related ID: ${transaction.relatedTradeId ?? "N/A"}';
-                    break;
-                  case UnifiedTransactionCategory.fee:
-                    iconData = Icons.receipt_long_outlined;
-                    iconColor = Colors.orange.shade700;
-                    title = 'Fee Charged';
-                    subtitle = transaction.originalTypeFromDb ?? transaction.description ?? '';
-                    break;
-                  case UnifiedTransactionCategory.commission:
-                    iconData = Icons.handshake_outlined;
-                    iconColor = Colors.brown.shade600;
-                    title = 'Commission';
-                    subtitle = transaction.originalTypeFromDb ?? transaction.description ?? '';
-                    break;
-                  case UnifiedTransactionCategory.dividend:
-                    iconData = Icons.paid_outlined;
-                    iconColor = Colors.teal.shade600;
-                    title = 'Dividend';
-                    subtitle = 'Related ID: ${transaction.relatedTradeId ?? "N/A"}';
-                    break;
-                  case UnifiedTransactionCategory.interest:
-                    iconData = Icons.attach_money_outlined;
-                    iconColor = Colors.lightGreen.shade700;
-                    title = 'Interest';
-                    subtitle = transaction.originalTypeFromDb ?? transaction.description ?? '';
-                     break;
-                  case UnifiedTransactionCategory.adjustment:
-                     iconData = Icons.tune_outlined;
-                     iconColor = Colors.grey.shade600;
-                     title = 'Adjustment';
-                     subtitle = transaction.originalTypeFromDb ?? transaction.description ?? '';
-                     break;
-                  default: // other
-                    iconData = Icons.info_outline;
-                    iconColor = Colors.grey.shade600;
-                    title = transaction.displayType;
-                    subtitle = transaction.originalTypeFromDb ?? transaction.description ?? '';
-                }
-              }
 
               return Card(
                 margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -763,20 +1001,34 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                       children: [
                         Row(
                           children: [
-                            Icon(iconData, color: iconColor, size: 28),
+                            Icon(
+                              transaction.source == TransactionSource.account
+                                  ? (transaction.amount > 0
+                                      ? Icons.account_balance_wallet_outlined
+                                      : Icons.credit_card_off_outlined)
+                                  : _getTransactionIcon(transaction.category),
+                              color: _getTransactionColor(transaction),
+                              size: 28,
+                            ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    title,
-                                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600, fontSize: 15),
+                                    transaction.displayType,
+                                    style: theme.textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 15,
+                                    ),
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
                                     DateFormat('MMM d, yyyy hh:mm a').format(transaction.createdAt.toLocal()),
-                                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withOpacity(0.6), fontSize: 11),
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                                      fontSize: 11,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -786,7 +1038,9 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                               style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.bold,
-                                color: transaction.amount == 0 ? theme.colorScheme.onSurface : (transaction.amount > 0 ? Colors.green.shade700 : Colors.red.shade700),
+                                color: transaction.amount == 0
+                                    ? theme.colorScheme.onSurface
+                                    : (transaction.amount > 0 ? Colors.green.shade700 : Colors.red.shade700),
                               ),
                             ),
                           ],
@@ -794,22 +1048,21 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                         if (isExpanded) ...[
                           const Divider(height: 24, thickness: 0.5, indent: 40),
                           Padding(
-                            padding: const EdgeInsets.only(top: 4.0, left: 40), // Indent details
+                            padding: const EdgeInsets.only(top: 4.0, left: 40),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildDetailRow(context, 'Type:', subtitle),
+                                _buildDetailRow(context, 'Type:', transaction.originalTypeFromDb ?? transaction.description ?? ''),
                                 _buildDetailRow(context, 'Transaction ID:', transaction.id),
-                                if (transaction.source == TransactionSource.system) ...[ // Corrected
-                                  if (transaction.relatedTradeId != null) _buildDetailRow(context, 'Related ID:', transaction.relatedTradeId!),
-                                ],
-                                if (transaction.notes != null && transaction.notes!.isNotEmpty) _buildDetailRow(context, 'Notes:', transaction.notes!),
-                                if (transaction.description != null && transaction.description!.isNotEmpty && transaction.notes != transaction.description) 
+                                if (transaction.source == TransactionSource.system && transaction.relatedTradeId != null)
+                                  _buildDetailRow(context, 'Related ID:', transaction.relatedTradeId!),
+                                if (transaction.notes?.isNotEmpty == true)
+                                  _buildDetailRow(context, 'Notes:', transaction.notes!),
+                                if (transaction.description?.isNotEmpty == true && transaction.notes != transaction.description)
                                   _buildDetailRow(context, 'Description:', transaction.description!),
-
                               ],
                             ),
-                          )
+                          ),
                         ],
                       ],
                     ),
@@ -819,13 +1072,54 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
             },
           ),
         ),
-        if (historyState.isLoadingMore)
-           const Padding(
-             padding: EdgeInsets.all(8.0),
-             child: Center(child: CircularProgressIndicator()),
-           ),
       ],
     );
+  }
+
+  IconData _getTransactionIcon(UnifiedTransactionCategory category) {
+    switch (category) {
+      case UnifiedTransactionCategory.profit:
+        return Icons.trending_up;
+      case UnifiedTransactionCategory.loss:
+        return Icons.trending_down;
+      case UnifiedTransactionCategory.fee:
+        return Icons.receipt_long_outlined;
+      case UnifiedTransactionCategory.commission:
+        return Icons.handshake_outlined;
+      case UnifiedTransactionCategory.dividend:
+        return Icons.paid_outlined;
+      case UnifiedTransactionCategory.interest:
+        return Icons.attach_money_outlined;
+      case UnifiedTransactionCategory.adjustment:
+        return Icons.tune_outlined;
+      default:
+        return Icons.info_outline;
+    }
+  }
+
+  Color _getTransactionColor(UnifiedTransaction transaction) {
+    if (transaction.source == TransactionSource.account) {
+      return transaction.amount > 0 ? Colors.green.shade600 : Colors.red.shade600;
+    }
+
+    switch (transaction.category) {
+      case UnifiedTransactionCategory.profit:
+        return Colors.green.shade700;
+      case UnifiedTransactionCategory.loss:
+        return Colors.red.shade700;
+      case UnifiedTransactionCategory.fee:
+        return Colors.orange.shade700;
+      case UnifiedTransactionCategory.commission:
+        return Colors.brown.shade600;
+      case UnifiedTransactionCategory.dividend:
+        return Colors.teal.shade600;
+      case UnifiedTransactionCategory.interest:
+        return Colors.lightGreen.shade700;
+      case UnifiedTransactionCategory.adjustment:
+        return Colors.grey.shade600;
+      default:
+        return Colors.grey.shade600;
+    }
   }
 
   Widget _buildDetailRow(BuildContext context, String label, String value) {

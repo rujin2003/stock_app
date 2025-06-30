@@ -6,8 +6,8 @@ import 'market_data_provider.dart';
 
 // Provider for the MarketWatcherService
 final marketWatcherServiceProvider = Provider<MarketWatcherService>((ref) {
-  final tradeService = TradeService();
   final webSocketService = ref.watch(webSocketServiceProvider);
+  final tradeService = TradeService(webSocketService);
 
   // Create and return the MarketWatcherService
   final marketWatcherService = MarketWatcherService(
